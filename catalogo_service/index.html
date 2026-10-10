@@ -10,7 +10,7 @@
         
         /* Navbar */
         nav { background: #000; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e50914; }
-        nav h1 { color: #e50914; font-size: 1.5rem; display: flex; align-items: center; gap: 10px; }
+        nav h1 { color: #e50914; font-size: 1.5rem; display: flex; align-items: center; gap: 10px; cursor: pointer; }
         .user-panel { display: flex; align-items: center; gap: 12px; }
         
         /* Estilos do Plano Premium (Atividade 7) */
@@ -46,13 +46,17 @@
 
         /* Grid de Filmes */
         .catalogo-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .movies-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 25px; }
-        .movie-card { background: #222; border-radius: 6px; overflow: hidden; transition: transform 0.2s; }
-        .movie-card:hover { transform: scale(1.03); }
-        .movie-card img { width: 100%; height: 300px; object-fit: cover; }
-        .movie-info { padding: 12px; }
-        .movie-title { font-weight: bold; margin-bottom: 5px; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .movies-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 25px; }
+        .movie-card { background: #222; border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; transition: transform 0.2s; }
+        .movie-card:hover { transform: scale(1.02); }
+        .movie-card img { width: 100%; height: 320px; object-fit: cover; }
+        .movie-info { padding: 12px; flex: 1; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; }
+        .movie-title { font-weight: bold; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .movie-meta { color: #888; font-size: 0.85rem; display: flex; justify-content: space-between; }
+        
+        /* Botão Favoritar */
+        .btn-favorito { background: #ffcc00; color: #000; border: none; border-radius: 4px; padding: 8px 10px; font-weight: bold; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 5px; }
+        .btn-favorito:hover { background: #e6b800; }
     </style>
 </head>
 <body>
@@ -280,21 +284,65 @@
                 container.innerHTML = '';
                 
                 filmes.forEach(f => {
+                    const poster = f.poster_url || (f.poster_path ? 'https://image.tmdb.org/t/p/w500' + f.poster_path : 'https://via.placeholder.com/300x450?text=Sem+Poster');
+                    const titulo = (f.titulo || f.title || '').replace(/'/g, "\\'");
+                    const idFilme = f.id || f.tmdb_movie_id || 0;
+
                     container.innerHTML += `
                         <div class="movie-card">
-                            <img src="${f.poster_url || (f.poster_path ? 'https://image.tmdb.org/t/p/w500' + f.poster_path : 'https://via.placeholder.com/300x450?text=Sem+Poster')}" alt="${f.titulo || f.title}">
+                            <img src="${poster}" alt="${titulo}">
                             <div class="movie-info">
-                                <div class="movie-title">${f.titulo || f.title}</div>
-                                <div class="movie-meta">
-                                    <span>${f.ano_lancamento || f.release_date || ''}</span>
-                                    <span>⭐ ${f.avaliacao || f.vote_average || 'N/A'}</span>
+                                <div>
+                                    <div class="movie-title">${titulo}</div>
+                                    <div class="movie-meta">
+                                        <span>${f.ano_lancamento || f.release_date || ''}</span>
+                                        <span>⭐ ${f.avaliacao || f.vote_average || 'N/A'}</span>
+                                    </div>
                                 </div>
+                                <button class="btn-favorito" onclick="favoritar(${idFilme}, '${titulo}', '${poster}')">⭐ Favorito</button>
                             </div>
                         </div>
                     `;
                 });
             } catch (e) {
                 console.log("Erro ao carregar catálogo.");
+            }
+        }
+
+        /* FUNÇÃO DE FAVORITAR COM TRATAMENTO DO LIMITE DE 3 */
+        async function favoritar(id, titulo, poster) {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('Faça login primeiro!');
+                return;
+            }
+            try {
+                const res = await fetch('/api/favoritos', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        tmdb_movie_id: Number(id),
+                        titulo: titulo,
+                        poster_path: poster || ''
+                    })
+                });
+                const data = await res.json();
+
+                if (res.status === 403) {
+                    alert('⚠️ ' + data.detail); // Limite atingido (Print 1 da entrega)
+                    return;
+                }
+
+                if (!res.ok) {
+                    throw new Error(data.detail || 'Falha ao favoritar');
+                }
+
+                alert(`"${titulo}" adicionado aos favoritos com sucesso!`);
+            } catch (err) {
+                alert('Erro: ' + err.message);
             }
         }
 
@@ -316,7 +364,6 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || 'Falha ao iniciar checkout.');
                 if (data.url) {
-                    // Redireciona para o formulário seguro hospedado pelo Stripe
                     window.location.href = data.url;
                 }
             } catch (err) {
@@ -333,7 +380,6 @@
             alternarTela('box-login');
         }
 
-        // Inicialização e tratamento de retornos de URL
         window.onload = () => {
             const params = new URLSearchParams(window.location.search);
             
@@ -362,6 +408,8 @@
                 atualizarPainelUsuario(nome, papel || 'usuario', isPremium);
                 alternarTela('box-catalogo');
                 carregarFilmes();
+            } else {
+                alternarTela('box-login');
             }
         };
     </script>

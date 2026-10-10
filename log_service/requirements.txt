@@ -11,3 +11,4 @@ python-dotenv
 requests>=2.31.0
 redis>=5.0.0
 prometheus-fastapi-instrumentator>=6.0.0
+stripe>=7.0.0
