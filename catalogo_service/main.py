@@ -1162,16 +1162,14 @@ def listar_favoritos(
         for f in favs
     ]
 
+LIMITE_FAVORITOS_GRATIS = 3  # <-- Adicione esta linha antes da rota
+
 @app.post(
     "/api/favoritos",
     status_code=status.HTTP_201_CREATED,
     tags=["Favoritos"],
-    summary="Adicionar filme aos favoritos (Limitado para usuários Free)",
-    responses={
-        **RESPOSTAS_ERRO_RBAC,
-        201: {"model": MensagemResposta},
-        403: {"model": Erro403Resposta, "description": "Limite de favoritos atingido no plano gratuito."}
-    }
+    summary="Adicionar filme aos favoritos",
+    responses={**RESPOSTAS_ERRO_AUTH, 201: {"model": MensagemResposta}}
 )
 def favoritar(
     dados: schemas.FavoritoCriar,
@@ -1182,7 +1180,6 @@ def favoritar(
     user_id = usuario["usuario_id"]
     is_premium = usuario.get("is_premium", False)
 
-    # REQUISITO 4: Limitação de benefício para quem não é premium
     if not is_premium:
         total_favoritos = db.query(models.Favorito).filter(models.Favorito.usuario_id == user_id).count()
         if total_favoritos >= LIMITE_FAVORITOS_GRATIS:
@@ -1197,6 +1194,7 @@ def favoritar(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Limite de {LIMITE_FAVORITOS_GRATIS} favoritos atingido! Assine o Plano Premium para ter favoritos ilimitados."
             )
+    ...
 
     # Evita duplicar o mesmo filme nos favoritos
     fav_existente = db.query(models.Favorito).filter(
