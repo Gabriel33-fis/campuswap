@@ -1,17 +1,26 @@
 import os
 from datetime import datetime, timedelta
-from fastapi import FastAPI, HTTPException, Depends, Request, Response, status
+import stripe
+import requests
+from fastapi import FastAPI, HTTPException, Depends, Request, Response, Header, status
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from prometheus_fastapi_instrumentator import Instrumentator
+
 from database import get_db, engine, Base
 import models
 import schemas
 import auth
 import email_service
-import requests
-from prometheus_fastapi_instrumentator import Instrumentator
 
 LOG_SERVICE_URL = os.getenv("LOG_SERVICE_URL", "http://log_service:6000")
+
+# Configurações Stripe (Modo de Teste)
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+CHECKOUT_SUCCESS_URL = os.getenv("CHECKOUT_SUCCESS_URL", "http://localhost:8000/success?session_id={CHECKOUT_SESSION_ID}")
+CHECKOUT_CANCEL_URL = os.getenv("CHECKOUT_CANCEL_URL", "http://localhost:8000/cancel")
 
 def extrair_ip(request: Request) -> str:
     """Extrai o IP real considerando proxies reversos ou cliente direto."""
@@ -43,15 +52,11 @@ except Exception as e:
 
 app = FastAPI(title="Auth Service")
 
-# Instrumentação Prometheus para expor métricas na rota /metrics (Requisito 3)
+# Instrumentação Prometheus para expor métricas na rota /metrics
 Instrumentator().instrument(app).expose(app)
 
 @app.get("/health", tags=["Observabilidade"])
 def health_check(response: Response, db: Session = Depends(get_db)):
-    """
-    Readiness real: testa a conexão com o banco de dados (Requisito 1).
-    Retorna 200 se saudável, 503 se o banco estiver indisponível.
-    """
     try:
         db.execute(text("SELECT 1"))
         return {
@@ -137,8 +142,15 @@ def login(dados: schemas.LoginRequest, request: Request, db: Session = Depends(g
         "access_token": token,
         "token_type": "bearer",
         "usuario_nome": usuario.nome,
-        "papel": usuario.papel
+        "papel": usuario.papel,
+        "is_premium": usuario.is_premium
     }
+
+@app.get("/me", response_model=schemas.UsuarioResponse)
+def obter_usuario_me(
+    usuario_atual: models.Usuario = Depends(auth.obter_usuario_atual)
+):
+    return usuario_atual
 
 @app.post("/forgot-password")
 def forgot_password(dados: schemas.EsqueciSenhaRequest, request: Request, db: Session = Depends(get_db)):
@@ -199,3 +211,95 @@ def reset_password(dados: schemas.RedefinirSenhaRequest, request: Request, db: S
     )
 
     return {"message": "Senha redefinida com sucesso!"}
+
+# =====================================================================
+# ROTAS DO STRIPE (ATIVIDADE 7 - PLANO PREMIUM)
+# =====================================================================
+
+@app.post("/checkout", response_model=schemas.CheckoutResponse)
+def criar_checkout_session(
+    request: Request,
+    usuario_atual: models.Usuario = Depends(auth.obter_usuario_atual)
+):
+    """Cria uma Checkout Session no Stripe associada ao ID do usuário."""
+    if not STRIPE_PRICE_ID:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="STRIPE_PRICE_ID não configurado no servidor."
+        )
+
+    try:
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{
+                "price": STRIPE_PRICE_ID,
+                "quantity": 1,
+            }],
+            mode="subscription",
+            client_reference_id=str(usuario_atual.id),
+            customer_email=usuario_atual.email,
+            success_url=CHECKOUT_SUCCESS_URL,
+            cancel_url=CHECKOUT_CANCEL_URL,
+        )
+
+        ip = extrair_ip(request)
+        registrar_log(
+            usuario_id=usuario_atual.id,
+            acao="checkout_iniciado",
+            ip=ip,
+            detalhes=f"Checkout session {session.id} criada para plano premium"
+        )
+
+        return {"url": session.url}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Erro ao criar sessão Stripe: {str(exc)}"
+        )
+
+@app.post("/webhook")
+async def stripe_webhook(
+    request: Request,
+    stripe_signature: str = Header(None, alias="stripe-signature"),
+    db: Session = Depends(get_db)
+):
+    """Recebe e processa eventos assíncronos do Stripe com verificação de assinatura."""
+    if not STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="STRIPE_WEBHOOK_SECRET não configurado no servidor."
+        )
+
+    payload = await request.body()
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload=payload,
+            sig_header=stripe_signature,
+            secret=STRIPE_WEBHOOK_SECRET
+        )
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payload inválido")
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assinatura Stripe inválida")
+
+    # Confirmação de pagamento bem-sucedido
+    if event["type"] == "checkout.session.completed":
+        session_obj = event["data"]["object"]
+        usuario_id = session_obj.get("client_reference_id")
+
+        if usuario_id:
+            usuario = db.query(models.Usuario).filter(models.Usuario.id == int(usuario_id)).first()
+            if usuario:
+                usuario.is_premium = True
+                usuario.stripe_customer_id = session_obj.get("customer")
+                db.commit()
+
+                registrar_log(
+                    usuario_id=usuario.id,
+                    acao="upgrade_premium",
+                    ip=extrair_ip(request),
+                    detalhes=f"Usuário {usuario.email} promovido a Premium via Stripe (Customer: {usuario.stripe_customer_id})"
+                )
+
+    return {"status": "success"}

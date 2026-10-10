@@ -6,10 +6,12 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 JWT_SECRET = os.getenv("JWT_SECRET", "default_secret")
 JWT_ALGORITHM = "HS256"
 
-# auto_error=False mantém as suas mensagens de erro 401 em vez das padrão do FastAPI
+# auto_error=False mantém as mensagens de erro 401 personalizadas
 bearer_scheme = HTTPBearer(auto_error=False, description="Cole apenas o access_token retornado pelo login")
 
-def obter_usuario_atual(credenciais: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+
+def obter_usuario_atual(credenciais: HTTPAuthorizationCredentials = Depends(bearer_scheme)) -> dict:
+    """Extrai e valida o payload JWT do cabeçalho de autorização."""
     if not credenciais or not credenciais.credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -23,3 +25,13 @@ def obter_usuario_atual(credenciais: HTTPAuthorizationCredentials = Depends(bear
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expirado")
     except jwt.PyJWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
+
+
+def verificar_premium(usuario: dict = Depends(obter_usuario_atual)) -> dict:
+    """Dependência para endpoints que exigem obrigatoriamente plano premium."""
+    if not usuario.get("is_premium", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso exclusivo para assinantes do Plano Premium."
+        )
+    return usuario

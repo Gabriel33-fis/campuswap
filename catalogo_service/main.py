@@ -1024,6 +1024,29 @@ def atualizar_perfil(
     return {"message": "Biografia atualizada com sucesso"}
 
 @app.post(
+    "/api/stripe/checkout",
+    tags=["Pagamentos (Stripe)"],
+    summary="Iniciar checkout do Plano Premium",
+    responses={**RESPOSTAS_ERRO_AUTH, 200: {"description": "Retorna URL de checkout do Stripe."}}
+)
+def iniciar_checkout(
+    request: Request,
+    usuario: dict = Depends(auth_guard.obter_usuario_atual)
+):
+    token = request.headers.get("authorization")
+    try:
+        resp = requests.post(
+            f"{AUTH_SERVICE_URL}/checkout",
+            headers={"Authorization": token},
+            timeout=5.0
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        return resp.json()
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Erro ao contatar auth_service: {str(e)}")
+
+@app.post(
     "/api/perfil/{target_usuario_id}/foto",
     tags=["Perfil & Armazenamento"],
     summary="Upload de foto de perfil para o MinIO",
@@ -1143,8 +1166,12 @@ def listar_favoritos(
     "/api/favoritos",
     status_code=status.HTTP_201_CREATED,
     tags=["Favoritos"],
-    summary="Adicionar filme aos favoritos",
-    responses={**RESPOSTAS_ERRO_AUTH, 201: {"model": MensagemResposta}}
+    summary="Adicionar filme aos favoritos (Limitado para usuários Free)",
+    responses={
+        **RESPOSTAS_ERRO_RBAC,
+        201: {"model": MensagemResposta},
+        403: {"model": Erro403Resposta, "description": "Limite de favoritos atingido no plano gratuito."}
+    }
 )
 def favoritar(
     dados: schemas.FavoritoCriar,
@@ -1152,8 +1179,35 @@ def favoritar(
     usuario: dict = Depends(auth_guard.obter_usuario_atual),
     db: Session = Depends(get_db)
 ):
+    user_id = usuario["usuario_id"]
+    is_premium = usuario.get("is_premium", False)
+
+    # REQUISITO 4: Limitação de benefício para quem não é premium
+    if not is_premium:
+        total_favoritos = db.query(models.Favorito).filter(models.Favorito.usuario_id == user_id).count()
+        if total_favoritos >= LIMITE_FAVORITOS_GRATIS:
+            ip = extrair_ip(request)
+            registrar_log(
+                usuario_id=user_id,
+                acao="tentativa_negada_limite_favoritos",
+                ip=ip,
+                detalhes=f"Usuário atingiu o limite gratuito de {LIMITE_FAVORITOS_GRATIS} favoritos."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Limite de {LIMITE_FAVORITOS_GRATIS} favoritos atingido! Assine o Plano Premium para ter favoritos ilimitados."
+            )
+
+    # Evita duplicar o mesmo filme nos favoritos
+    fav_existente = db.query(models.Favorito).filter(
+        models.Favorito.usuario_id == user_id,
+        models.Favorito.tmdb_movie_id == dados.tmdb_movie_id
+    ).first()
+    if fav_existente:
+        return {"message": "Este filme já está nos seus favoritos"}
+
     novo_fav = models.Favorito(
-        usuario_id=usuario["usuario_id"],
+        usuario_id=user_id,
         tmdb_movie_id=dados.tmdb_movie_id,
         titulo=dados.titulo,
         poster_path=dados.poster_path
@@ -1163,7 +1217,7 @@ def favoritar(
 
     ip = extrair_ip(request)
     registrar_log(
-        usuario_id=usuario["usuario_id"],
+        usuario_id=user_id,
         acao="favoritar_filme",
         ip=ip,
         detalhes=f"Favoritou o filme '{dados.titulo}' (TMDB ID: {dados.tmdb_movie_id})"

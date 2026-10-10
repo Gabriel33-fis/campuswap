@@ -1,5 +1,5 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from datetime import datetime
+from sqlalchemy import Boolean, Column, DateTime, Integer, String
 from database import Base
 
 class Usuario(Base):
@@ -10,6 +10,10 @@ class Usuario(Base):
     email = Column(String(150), unique=True, index=True, nullable=False)
     senha_hash = Column(String(255), nullable=False)
     papel = Column(String(50), default="usuario")
+    
+    # Campos para o Plano Premium (Stripe)
+    is_premium = Column(Boolean, default=False, nullable=False)
+    stripe_customer_id = Column(String(255), nullable=True)
 
 class RecuperacaoSenha(Base):
     __tablename__ = "recuperacoes_senha"

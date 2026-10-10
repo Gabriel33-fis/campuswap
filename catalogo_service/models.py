@@ -2,6 +2,16 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
 from sqlalchemy.sql import func
 from database import Base
+from sqlalchemy import Column, Integer, String, Boolean
+
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    # ... outros campos existentes ...
+    is_premium = Column(Boolean, default=False, nullable=False) #
+    stripe_customer_id = Column(String(255), nullable=True) # opcional, para rastreio
 
 class Favorito(Base):
     __tablename__ = "favoritos"
