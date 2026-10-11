@@ -202,7 +202,13 @@ HTML_PAGE = """
         .nav-links { display: flex; gap: 15px; }
         .nav-link { color: #aaa; text-decoration: none; font-weight: bold; cursor: pointer; font-size: 0.95rem; }
         .nav-link:hover, .nav-link.active { color: #fff; border-bottom: 2px solid #e50914; }
-        .user-panel { display: flex; align-items: center; gap: 15px; }
+        .user-panel { display: flex; align-items: center; gap: 12px; }
+
+        /* Estilos do Plano Premium (Atividade 7) */
+        .badge-premium { background: #ffd700; color: #141414; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; letter-spacing: 0.5px; }
+        .btn-premium { background: linear-gradient(135deg, #ffd700, #ffb703); color: #000; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; cursor: pointer; transition: opacity 0.2s; }
+        .btn-premium:hover { opacity: 0.9; }
+
         .btn-logout { background: #333; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
         .btn-logout:hover { background: #e50914; }
         .main-container { padding: 30px 20px; max-width: 1200px; margin: 0 auto; width: 100%; flex: 1; }
@@ -273,10 +279,15 @@ HTML_PAGE = """
         </div>
         <div class="user-panel">
             <span id="nav-user-info">Não conectado</span>
+            <span id="nav-badge-premium" class="badge-premium hidden">👑 PREMIUM</span>
+            <button id="btn-assinar-premium" class="btn-premium hidden" onclick="iniciarCheckoutStripe()">⭐ Assinar Premium</button>
             <button id="btn-logout" class="btn-logout hidden" onclick="logout()">Sair</button>
         </div>
     </nav>
     <div class="main-container">
+        <!-- AVISO DE RETORNO DO STRIPE -->
+        <div id="msg-global" class="msg hidden"></div>
+
         <!-- LOGIN -->
         <div id="box-login" class="auth-card">
             <h2>Login</h2>
@@ -458,6 +469,18 @@ HTML_PAGE = """
             el.classList.remove('hidden');
         }
 
+        function atualizarUIStatusPremium(isPremium) {
+            const badge = document.getElementById('nav-badge-premium');
+            const btnAssinar = document.getElementById('btn-assinar-premium');
+            if (isPremium) {
+                badge.classList.remove('hidden');
+                btnAssinar.classList.add('hidden');
+            } else {
+                badge.classList.add('hidden');
+                btnAssinar.classList.remove('hidden');
+            }
+        }
+
         async function carregarFilmes() {
             const token = localStorage.getItem('token');
             const container = document.getElementById('movies-container');
@@ -550,7 +573,6 @@ HTML_PAGE = """
                     avatarImg.src = 'https://via.placeholder.com/140x140?text=Sem+Foto';
                 }
 
-                // Renderiza favoritos no perfil
                 const favsContainer = document.getElementById('profile-favs-container');
                 favsContainer.innerHTML = '';
                 if (!data.favoritos || data.favoritos.length === 0) {
@@ -627,6 +649,7 @@ HTML_PAGE = """
             }
         }
 
+        /* FUNÇÃO DE FAVORITAR COM TRATAMENTO DO LIMITE DE 3 (ATIVIDADE 7) */
         async function favoritar(id, titulo, poster) {
             const token = localStorage.getItem('token');
             try {
@@ -636,9 +659,19 @@ HTML_PAGE = """
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`
                     },
-                    body: JSON.stringify({ tmdb_movie_id: id, titulo, poster_path: poster })
+                    body: JSON.stringify({ tmdb_movie_id: Number(id), titulo, poster_path: poster || '' })
                 });
-                if (!res.ok) throw new Error('Não foi possível favoritar');
+                const data = await res.json();
+
+                if (res.status === 403) {
+                    alert('⚠️ ' + data.detail); // Alerta do limite de favoritos atingido (Print 1)
+                    return;
+                }
+
+                if (!res.ok) {
+                    throw new Error(data.detail || 'Não foi possível favoritar');
+                }
+
                 alert(`"${titulo}" adicionado aos favoritos!`);
             } catch (e) {
                 alert(e.message);
@@ -656,6 +689,31 @@ HTML_PAGE = """
                 carregarFavoritos();
             } catch (e) {
                 alert(e.message);
+            }
+        }
+
+        /* CHECKOUT STRIPE (ATIVIDADE 7) */
+        async function iniciarCheckoutStripe() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('Faça login primeiro para assinar!');
+                return;
+            }
+            try {
+                const res = await fetch('/api/stripe/checkout', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}` 
+                    }
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Falha ao iniciar checkout.');
+                if (data.url) {
+                    window.location.href = data.url;
+                }
+            } catch (err) {
+                alert('Erro ao redirecionar para a Stripe: ' + err.message);
             }
         }
 
@@ -764,12 +822,18 @@ HTML_PAGE = """
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || 'Falha no login');
+                
+                const isPremium = Boolean(data.is_premium);
                 localStorage.setItem('token', data.access_token);
                 localStorage.setItem('usuario_nome', data.usuario_nome);
                 localStorage.setItem('papel', data.papel || data.role || 'usuario');
+                localStorage.setItem('is_premium', isPremium ? 'true' : 'false');
+                
                 document.getElementById('nav-user-info').innerText = `${data.usuario_nome} [${data.papel || data.role || 'usuario'}]`;
                 document.getElementById('btn-logout').classList.remove('hidden');
                 document.getElementById('nav-tabs').classList.remove('hidden');
+                atualizarUIStatusPremium(isPremium);
+                
                 mostrarAba('catalogo');
             } catch (err) {
                 exibirAviso('msg-login', err.message, true);
@@ -842,6 +906,8 @@ HTML_PAGE = """
             document.getElementById('nav-user-info').innerText = 'Não conectado';
             document.getElementById('btn-logout').classList.add('hidden');
             document.getElementById('nav-tabs').classList.add('hidden');
+            document.getElementById('nav-badge-premium').classList.add('hidden');
+            document.getElementById('btn-assinar-premium').classList.add('hidden');
             alternarTela('box-login');
         }
 
@@ -854,14 +920,25 @@ HTML_PAGE = """
                 return;
             }
 
+            if (params.get('session_id')) {
+                exibirAviso('msg-global', '🎉 Pagamento confirmado pela Stripe! Sua conta agora é Premium.');
+            } else if (params.get('status') === 'cancelado') {
+                exibirAviso('msg-global', 'O checkout da Stripe foi cancelado.', true);
+            }
+
             const token = localStorage.getItem('token');
             const nome = localStorage.getItem('usuario_nome');
             const papel = localStorage.getItem('papel');
+            const isPremium = localStorage.getItem('is_premium') === 'true';
+
             if (token && nome) {
                 document.getElementById('nav-user-info').innerText = `${nome} [${papel}]`;
                 document.getElementById('btn-logout').classList.remove('hidden');
                 document.getElementById('nav-tabs').classList.remove('hidden');
+                atualizarUIStatusPremium(isPremium);
                 mostrarAba('catalogo');
+            } else {
+                alternarTela('box-login');
             }
         };
     </script>
