@@ -230,7 +230,7 @@ def criar_checkout_session(
 
     try:
         session = stripe.checkout.Session.create(
-            payment_method_types=["card"],
+            
             line_items=[{
                 "price": STRIPE_PRICE_ID,
                 "quantity": 1,
