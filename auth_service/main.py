@@ -130,11 +130,12 @@ def login(dados: schemas.LoginRequest, request: Request, db: Session = Depends(g
             detail="Credenciais inválidas"
         )
     
-    token = auth.criar_access_token(
+    ttoken = auth.criar_access_token(
         usuario_id=usuario.id,
         email=usuario.email,
         papel=usuario.papel,
-        nome=usuario.nome
+        nome=usuario.nome,
+        is_premium=bool(usuario.is_premium)
     )
 
     registrar_log(
