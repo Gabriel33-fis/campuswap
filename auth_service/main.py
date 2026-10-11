@@ -19,8 +19,14 @@ LOG_SERVICE_URL = os.getenv("LOG_SERVICE_URL", "http://log_service:6000")
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
-CHECKOUT_SUCCESS_URL = os.getenv("CHECKOUT_SUCCESS_URL", "http://localhost:8000/success?session_id={CHECKOUT_SESSION_ID}")
-CHECKOUT_CANCEL_URL = os.getenv("CHECKOUT_CANCEL_URL", "http://localhost:8000/cancel")
+CHECKOUT_SUCCESS_URL = os.getenv(
+    "CHECKOUT_SUCCESS_URL",
+    "https://gabriel-graciano-isw055.lapps.studio/?session_id={CHECKOUT_SESSION_ID}"
+)
+CHECKOUT_CANCEL_URL = os.getenv(
+    "CHECKOUT_CANCEL_URL",
+    "https://gabriel-graciano-isw055.lapps.studio/?status=cancelado"
+)
 
 def extrair_ip(request: Request) -> str:
     """Extrai o IP real considerando proxies reversos ou cliente direto."""
