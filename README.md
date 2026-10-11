@@ -21,6 +21,44 @@
 * **Professor:** [siriani](https://github.com/siriani)
 
 ---
+
+## Atividade 7 - Integração de Pagamentos com Stripe e Privilégios Premium
+
+Atividade desenvolvida sob orientação do professor [siriani](https://github.com/siriani).
+
+### Descrição da Funcionalidade
+Implementação do fluxo de monetização e controle de acesso baseado em assinatura:
+- **Limite Gratuito:** Usuários padrão têm limite de 3 filmes favoritados. Tentativas adicionais disparam bloqueio via API (HTTP 403).
+- **Checkout Seguro:** Integração com a Stripe via sessão de checkout em ambiente de testes.
+- **Sincronização de Status:** Atualização do status `is_premium` no banco de dados e persistência do privilégio no token JWT emitido pelo `auth_service`.
+- **Benefício Premium:** Desbloqueio do selo **👑 PREMIUM** no cabeçalho e liberação de favoritos ilimitados.
+
+---
+
+### Evidências de Entrega
+
+#### 1. Limite de Favoritos em Conta Gratuita
+Tentativa de adicionar o 4º filme antes da assinatura, exibindo o bloqueio do plano:
+
+![Limite de Favoritos Atingido](./prints/01_limite_atingido.png)
+
+#### 2. Checkout do Stripe Concluído com Sucesso (Modo de Teste)
+Processamento da assinatura no formulário de pagamento da Stripe utilizando dados de teste:
+
+![Checkout Stripe em Modo de Teste](./prints/02_checkout_stripe.png)
+
+#### 3. Usuário Atualizado para Premium no Banco de Dados
+Consulta direta na base de dados (`/app/auth.db`) demonstrando a coluna `is_premium = 1`:
+
+![Status no Banco de Dados](./prints/03_banco_premium.png)
+
+#### 4. Benefício Premium em Funcionamento
+Retorno à aplicação exibindo o banner de confirmação, o selo **👑 PREMIUM** ativo e acesso liberado:
+
+![Benefício Premium Ativo](./prints/04_beneficio_ativo.png)
+
+---
+
 ## 📦 Atividade 6 — Armazenamento de Objetos (MinIO & Perfil de Usuário)
 
 ### 1. Arquitetura de Armazenamento de Mídia

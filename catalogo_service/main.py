@@ -1255,9 +1255,19 @@ def favoritar(
     db: Session = Depends(get_db)
 ):
     user_id = usuario["usuario_id"]
-    is_premium = usuario.get("is_premium", False)
+    user_id = usuario["usuario_id"]
+    
+    # Converte qualquer variação (True, 1, "true", "1") para booleano real
+    raw_premium = usuario.get("is_premium", False)
+    is_premium = str(raw_premium).lower() in ("true", "1")
 
     if not is_premium:
+        total_favoritos = db.query(models.Favorito).filter(models.Favorito.usuario_id == user_id).count()
+        if total_favoritos >= LIMITE_FAVORITOS_GRATIS:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Limite de 3 favoritos atingido! Assine o Plano Premium para ter favoritos ilimitados."
+            )
         total_favoritos = db.query(models.Favorito).filter(models.Favorito.usuario_id == user_id).count()
         if total_favoritos >= LIMITE_FAVORITOS_GRATIS:
             ip = extrair_ip(request)
