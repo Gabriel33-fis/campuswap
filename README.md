@@ -22,6 +22,25 @@
 
 ---
 
+---
+
+## Atividade 8 - Classificação SaaS, PaaS e IaaS do Projeto
+
+Atividade de encerramento desenvolvida sob orientação do professor [siriani](https://github.com/siriani).
+
+A infraestrutura e os serviços que sustentam a aplicação operam de forma integrada nas três camadas fundamentais da computação em nuvem:
+
+| Camada | Componente / Tecnologia | Justificação Técnica |
+| :--- | :--- | :--- |
+| **IaaS** *(Infrastructure as a Service)* | **VM Proxmox (Ubuntu Server + Docker)** | Camada de infraestrutura virtualizada onde o utilizador assume o controlo operacional direto (configuração do SO, alocação de armazenamento, rede e gestão do daemon do Docker). |
+| **PaaS** *(Platform as a Service)* | **Contentores Docker (`auth_service`, `catalogo_service`, `log_service`, `MinIO`, `Redis`) geridos via Portainer** | O código-fonte empacotado em imagens executa sobre uma camada de runtime e orquestração de contentores, sem necessidade de reconfiguração do sistema operativo base a cada ciclo de deploy. |
+| **SaaS** *(Software as a Service)* | **Stripe API** | Serviço de pagamentos externo e transacional consumido integralmente via API e Webhooks, sem necessidade de alojar lógica bancária ou infraestrutura de checkout própria. |
+| **SaaS** *(Software as a Service)* | **The Movie Database (TMDB API)** | Fornecedor de dados externo consumido via chamadas HTTP REST para pesquisa e sincronização dos metadados e posters do catálogo cinematográfico. |
+
+> 📖 **Documentação Técnica Completa:** Consulte os detalhes de arquitetura, fluxos, regras de negócio e modelo de dados no documento dedicado: [DOCUMENTACAO.md](./DOCUMENTACAO.md).
+
+---
+
 ## Atividade 7 - Integração de Pagamentos com Stripe e Privilégios Premium
 
 Atividade desenvolvida sob orientação do professor [siriani](https://github.com/siriani).
