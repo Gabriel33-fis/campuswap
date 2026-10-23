@@ -1,4 +1,4 @@
-# 📦 CampuSwap — Your Campus Marketplace
+# 📦 CampuSwap — Seu marketplace no campus
 
 Atividade desenvolvida para a disciplina de Introdução à Computação em Nuvem (ISW055), sob orientação do professor [siriani](https://github.com/siriani).
 
