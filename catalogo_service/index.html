@@ -1,87 +1,308 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CampuSwap — Marketplace Universitário</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CampuSwap – Marketplace Universitário</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 </head>
-<body class="bg-gray-50 text-gray-800">
+<body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col justify-between">
 
-    <!-- Cabeçalho de Navegação -->
+  <div>
+    <!-- Cabeçalho -->
     <header class="bg-indigo-700 text-white shadow-md">
-        <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-            <h1 class="text-2xl font-bold tracking-tight">📦 CampuSwap</h1>
-            <nav id="nav-actions">
-                <button onclick="mostrarLogin()" class="bg-white text-indigo-700 font-semibold px-4 py-2 rounded-lg shadow hover:bg-gray-100 transition">Entrar / Registar</button>
-            </nav>
-        </div>
+      <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+        <h1 class="text-2xl font-bold tracking-tight cursor-pointer" onclick="carregarItens()">📦 CampuSwap</h1>
+        <nav id="nav-actions">
+          <button onclick="mostrarLogin()" class="bg-white text-indigo-700 font-semibold px-4 py-2 rounded-lg shadow hover:bg-gray-100 transition">Entrar / Registar</button>
+        </nav>
+      </div>
     </header>
 
-    <!-- Secção Pública (Landing Page) -->
+    <!-- Seção Pública (Landing Page) -->
     <section id="landing-hero" class="py-16 bg-gradient-to-r from-indigo-600 to-indigo-800 text-white text-center px-4">
-        <div class="max-w-3xl mx-auto">
-            <h2 class="text-4xl font-extrabold mb-4">O marketplace colaborativo do seu campus</h2>
-            <p class="text-lg text-indigo-100 mb-8">
-                Compre, venda, troque ou peça livros, calculadoras e materiais académicos emprestados diretamente a outros estudantes.
-            </p>
-            <button onclick="mostrarCadastro()" class="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-3 rounded-lg text-lg shadow-lg transition">Criar Conta Gratuita</button>
-        </div>
+      <div class="max-w-3xl mx-auto">
+        <h2 class="text-4xl font-extrabold mb-4">O marketplace colaborativo do seu campus</h2>
+        <p class="text-lg text-indigo-100 mb-8">
+          Compre, venda, troque ou peça livros, calculadoras e materiais académicos emprestados diretamente a outros estudantes.
+        </p>
+        <button onclick="mostrarCadastro()" class="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-3 rounded-lg text-lg shadow-lg transition">Criar Conta Gratuita</button>
+      </div>
     </section>
 
-    <!-- Vitrine Principal de Materiais -->
+    <!-- Vitrine Principal -->
     <main class="max-w-6xl mx-auto px-4 py-12">
-        <div class="flex justify-between items-center mb-6">
-            <h3 class="text-2xl font-bold text-gray-800">Materiais Disponíveis no Campus</h3>
-            <button onclick="abrirModalNovoItem()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-indigo-700">+ Anunciar Material</button>
-        </div>
+      <div class="flex justify-between items-center mb-6">
+        <h3 class="text-2xl font-bold text-gray-800">Materiais Disponíveis no Campus</h3>
+        <button onclick="abrirModalNovoItem()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-indigo-700 transition">+ Anunciar Material</button>
+      </div>
 
-        <!-- Grade de Produtos -->
-        <div id="grid-itens" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-            <!-- Renderizado dinamicamente via JavaScript com /api/itens -->
-        </div>
+      <div id="grid-itens" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+        <!-- Preenchido via JavaScript -->
+        <p class="text-gray-500 col-span-3 text-center py-8">A carregar anúncios disponíveis...</p>
+      </div>
     </main>
+  </div>
 
-    <script>
-        const API_URL = '/api';
+  <footer class="bg-gray-800 text-gray-300 py-6 text-center text-sm">
+    <p>CampuSwap © 2026 - Plataforma de Economia Circular Estudantil</p>
+  </footer>
 
-        async function carregarItens() {
-            try {
-                const res = await fetch(`${API_URL}/itens`);
-                const itens = await res.json();
-                const grid = document.getElementById('grid-itens');
-                grid.innerHTML = '';
+  <!-- MODAL: LOGIN -->
+  <div id="modal-login" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-xl font-bold">Aceder à Conta</h3>
+        <button onclick="fecharModais()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+      </div>
+      <form onsubmit="realizarLogin(event)" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Email institucional</label>
+          <input type="email" id="login-email" required class="w-full mt-1 p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="seu.nome@fatec.sp.gov.br">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Senha</label>
+          <input type="password" id="login-senha" required class="w-full mt-1 p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500" placeholder="******">
+        </div>
+        <p id="login-erro" class="text-red-500 text-sm hidden"></p>
+        <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-md font-semibold hover:bg-indigo-700">Entrar</button>
+      </form>
+    </div>
+  </div>
 
-                if (itens.length === 0) {
-                    grid.innerHTML = '<p class="text-gray-500 col-span-3">Nenhum material anunciado no momento.</p>';
-                    return;
-                }
+  <!-- MODAL: CADASTRO -->
+  <div id="modal-cadastro" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-xl font-bold">Criar Conta de Estudante</h3>
+        <button onclick="fecharModais()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+      </div>
+      <form onsubmit="realizarCadastro(event)" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Nome completo</label>
+          <input type="text" id="cad-nome" required class="w-full mt-1 p-2 border rounded-md" placeholder="Gabriel Graciano">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Email</label>
+          <input type="email" id="cad-email" required class="w-full mt-1 p-2 border rounded-md" placeholder="aluno@fatec.sp.gov.br">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Senha</label>
+          <input type="password" id="cad-senha" required class="w-full mt-1 p-2 border rounded-md" placeholder="******">
+        </div>
+        <p id="cad-erro" class="text-red-500 text-sm hidden"></p>
+        <button type="submit" class="w-full bg-green-500 text-white py-2 rounded-md font-semibold hover:bg-green-600">Registar</button>
+      </form>
+    </div>
+  </div>
 
-                itens.forEach(item => {
-                    const card = document.createElement('div');
-                    card.className = "bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col justify-between p-5";
-                    card.innerHTML = `
-                        <div>
-                            <div class="flex justify-between items-start mb-2">
-                                <span class="text-xs uppercase font-bold tracking-wider px-2 py-1 bg-indigo-100 text-indigo-800 rounded">${item.modalidade}</span>
-                                <span class="text-sm font-semibold text-green-600">${item.preco > 0 ? 'R$ ' + item.preco.toFixed(2) : 'Grátis / Troca'}</span>
-                            </div>
-                            <h4 class="text-lg font-bold text-gray-900 mb-2">${item.titulo}</h4>
-                            <p class="text-sm text-gray-600 mb-4">${item.descricao}</p>
-                        </div>
-                        <div class="border-t pt-3 flex justify-between items-center">
-                            <span class="text-xs text-gray-400 capitalize">Condição: ${item.condicao.replace('_', ' ')}</span>
-                            <button onclick="verDetalhes(${item.id})" class="text-indigo-600 font-semibold text-sm hover:underline">Ver detalhes</button>
-                        </div>
-                    `;
-                    grid.appendChild(card);
-                });
-            } catch (err) {
-                console.error("Erro ao carregar catálogo:", err);
-            }
+  <!-- MODAL: ANUNCIAR MATERIAL -->
+  <div id="modal-item" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-xl font-bold">Anunciar Material no Campus</h3>
+        <button onclick="fecharModais()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+      </div>
+      <form onsubmit="cadastrarItem(event)" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Título do Anúncio</label>
+          <input type="text" id="item-titulo" required class="w-full mt-1 p-2 border rounded-md" placeholder="Ex: Calculadora Científica HP 50g">
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Modalidade</label>
+            <select id="item-modalidade" class="w-full mt-1 p-2 border rounded-md">
+              <option value="venda">Venda</option>
+              <option value="troca">Troca</option>
+              <option value="emprestimo">Empréstimo</option>
+              <option value="doacao">Doação</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Preço (R$)</label>
+            <input type="number" step="0.01" id="item-preco" value="0.00" class="w-full mt-1 p-2 border rounded-md">
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Descrição detalhada</label>
+          <textarea id="item-descricao" rows="3" class="w-full mt-1 p-2 border rounded-md" placeholder="Descreva o estado de conservação, semestre ou requisitos."></textarea>
+        </div>
+        <p id="item-erro" class="text-red-500 text-sm hidden"></p>
+        <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded-md font-semibold hover:bg-indigo-700">Publicar Anúncio</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = window.location.origin;
+
+    function fecharModais() {
+      document.getElementById('modal-login').classList.add('hidden');
+      document.getElementById('modal-cadastro').classList.add('hidden');
+      document.getElementById('modal-item').classList.add('hidden');
+    }
+
+    function mostrarLogin() {
+      fecharModais();
+      document.getElementById('modal-login').classList.remove('hidden');
+    }
+
+    function mostrarCadastro() {
+      fecharModais();
+      document.getElementById('modal-cadastro').classList.remove('hidden');
+    }
+
+    function abrirModalNovoItem() {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('É necessário ter sessão iniciada para anunciar materiais.');
+        mostrarLogin();
+        return;
+      }
+      fecharModais();
+      document.getElementById('modal-item').classList.remove('hidden');
+    }
+
+    function atualizarNav() {
+      const userRaw = localStorage.getItem('usuario');
+      const nav = document.getElementById('nav-actions');
+      if (userRaw) {
+        const user = JSON.parse(userRaw);
+        nav.innerHTML = `
+          <div class="flex items-center gap-4">
+            <span class="text-sm font-medium">👤 ${user.nome || user.email}</span>
+            <button onclick="fazerLogout()" class="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1.5 rounded transition">Sair</button>
+          </div>
+        `;
+      } else {
+        nav.innerHTML = `
+          <button onclick="mostrarLogin()" class="bg-white text-indigo-700 font-semibold px-4 py-2 rounded-lg shadow hover:bg-gray-100 transition">Entrar / Registar</button>
+        `;
+      }
+    }
+
+    function fazerLogout() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('usuario');
+      atualizarNav();
+      alert('Sessão encerrada.');
+    }
+
+    async function realizarLogin(e) {
+      e.preventDefault();
+      const erroEl = document.getElementById('login-erro');
+      erroEl.classList.add('hidden');
+      const email = document.getElementById('login-email').value;
+      const senha = document.getElementById('login-senha').value;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, senha })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Falha na autenticação.');
+
+        localStorage.setItem('token', data.access_token || data.token);
+        localStorage.setItem('usuario', JSON.stringify(data.usuario || { email }));
+        fecharModais();
+        atualizarNav();
+      } catch (err) {
+        erroEl.textContent = err.message;
+        erroEl.classList.remove('hidden');
+      }
+    }
+
+    async function realizarCadastro(e) {
+      e.preventDefault();
+      const erroEl = document.getElementById('cad-erro');
+      erroEl.classList.add('hidden');
+      const nome = document.getElementById('cad-nome').value;
+      const email = document.getElementById('cad-email').value;
+      const senha = document.getElementById('cad-senha').value;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/usuarios`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nome, email, senha })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Erro ao realizar registo.');
+
+        alert('Conta criada com sucesso! Faça login para continuar.');
+        mostrarLogin();
+      } catch (err) {
+        erroEl.textContent = err.message;
+        erroEl.classList.remove('hidden');
+      }
+    }
+
+    async function cadastrarItem(e) {
+      e.preventDefault();
+      const token = localStorage.getItem('token');
+      const erroEl = document.getElementById('item-erro');
+      erroEl.classList.add('hidden');
+
+      const titulo = document.getElementById('item-titulo').value;
+      const modalidade = document.getElementById('item-modalidade').value;
+      const preco = parseFloat(document.getElementById('item-preco').value) || 0.0;
+      const descricao = document.getElementById('item-descricao').value;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/itens`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ titulo, modalidade, preco, descricao, categoria_id: 1 })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Erro ao publicar material.');
+
+        fecharModais();
+        carregarItens();
+        alert('Material anunciado com sucesso!');
+      } catch (err) {
+        erroEl.textContent = err.message;
+        erroEl.classList.remove('hidden');
+      }
+    }
+
+    async function carregarItens() {
+      const container = document.getElementById('grid-itens');
+      try {
+        const res = await fetch(`${API_BASE}/api/itens`);
+        const itens = await res.json();
+        if (!Array.isArray(itens) || itens.length === 0) {
+          container.innerHTML = `<p class="text-gray-500 col-span-3 text-center py-8">Nenhum material cadastrado de momento. Seja o primeiro a anunciar!</p>`;
+          return;
         }
 
-        document.addEventListener('DOMContentLoaded', carregarItens);
-    </script>
+        container.innerHTML = itens.map(item => `
+          <div class="bg-white rounded-lg shadow border p-5 flex flex-col justify-between hover:shadow-lg transition">
+            <div>
+              <div class="flex justify-between items-start mb-2">
+                <span class="text-xs uppercase font-bold tracking-wide px-2 py-1 rounded bg-indigo-100 text-indigo-700">${item.modalidade || 'Disponível'}</span>
+                <span class="font-extrabold text-green-600">${item.preco > 0 ? 'R$ ' + Number(item.preco).toFixed(2) : 'Gratuito'}</span>
+              </div>
+              <h4 class="text-lg font-bold text-gray-800 mb-1">${item.titulo}</h4>
+              <p class="text-gray-600 text-sm mb-4 line-clamp-3">${item.descricao || 'Sem descrição informada.'}</p>
+            </div>
+            <button onclick="alert('Funcionalidade de contato/interesse para o item ${item.id}')" class="w-full bg-gray-100 hover:bg-indigo-50 text-indigo-700 font-semibold py-2 rounded text-sm transition">Tenho Interesse</button>
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = `<p class="text-red-500 col-span-3 text-center py-8">Não foi possível carregar os materiais no momento.</p>`;
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      atualizarNav();
+      carregarItens();
+    });
+  </script>
 </body>
 </html>
