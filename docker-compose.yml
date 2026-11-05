@@ -1,65 +1,9 @@
 version: '3.8'
 
 services:
-  catalogo_service:
-    image: ghcr.io/gabriel33-fis/catalogo-tom-hanks/catalogo_service:sha-4f78d24
-    container_name: catalogo_service
-    restart: always
-    ports:
-      - "8207:8000"
-    environment:
-      - DB_HOST=${DB_HOST}
-      - DB_PORT=${DB_PORT:-3306}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=${DB_NAME}
-      - TMDB_API_KEY=${TMDB_API_KEY}
-      - JWT_SECRET=${JWT_SECRET}
-      - AUTH_SERVICE_URL=http://auth_service:5000
-      - LOG_SERVICE_URL=http://log_service:6000
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    depends_on:
-      - auth_service
-      - log_service
-    networks:
-      - tom_hanks_net
-
-  auth_service:
-    build: ./auth_service
-    container_name: auth_service
-    restart: always
-    environment:
-      - DB_HOST=${DB_HOST}
-      - DB_PORT=${DB_PORT:-3306}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=${DB_NAME}
-      - JWT_SECRET=${JWT_SECRET}
-      - BASE_PUBLIC_URL=https://gabriel-graciano-isw055.lapps.studio
-      - MAILTRAP_HOST=sandbox.smtp.mailtrap.io
-      - MAILTRAP_PORT=2525
-      - MAILTRAP_USER=${MAILTRAP_USER}
-      - MAILTRAP_PASS=${MAILTRAP_PASS}
-      - LOG_SERVICE_URL=http://log_service:6000
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    depends_on:
-      - log_service
-    networks:
-      - tom_hanks_net
-
   redis:
     image: redis:7-alpine
-    container_name: tom_hanks_redis
+    container_name: gabriel_redis
     restart: always
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -70,15 +14,17 @@ services:
       - tom_hanks_net
 
   log_service:
-    build: ./log_service
-    container_name: log_service
+    build:
+      context: https://github.com/Gabriel33-fis/campuswap.git#main:log_service
+    container_name: gabriel_log_service
     restart: always
+    command: sh -c "pip install requests redis prometheus-fastapi-instrumentator && uvicorn main:app --host 0.0.0.0 --port 6000"
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_SECRET=chave_super_secreta_jwt_padrao
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6000/health')"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:6000/health')\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -88,30 +34,87 @@ services:
     networks:
       - tom_hanks_net
 
+  auth_service:
+    build:
+      context: https://github.com/Gabriel33-fis/campuswap.git#main:auth_service
+    container_name: gabriel_auth_service
+    restart: always
+    command: sh -c "pip install requests pymysql cryptography prometheus-fastapi-instrumentator stripe && uvicorn main:app --host 0.0.0.0 --port 5000"
+    ports:
+      - "5000:5000"
+    environment:
+      - DATABASE_URL=sqlite:////app/auth.db
+      - JWT_SECRET=chave_super_secreta_jwt_padrao
+      - LOG_SERVICE_URL=http://log_service:6000
+      - MAILTRAP_HOST=sandbox.smtp.mailtrap.io
+      - MAILTRAP_PORT=2525
+      - MAILTRAP_USER=891b6bf689d033
+      - MAILTRAP_PASS=a6056f6ec19f20
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_PRICE_ID=${STRIPE_PRICE_ID}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      - log_service
+    networks:
+      - tom_hanks_net
+
   minio:
-    image: minio/minio:latest
-    container_name: tom_hanks_minio
+    image: minio/minio:RELEASE.2024-01-18T22-51-28Z
+    container_name: gabriel_minio
     restart: always
     command: server /data --console-address ":9001"
     environment:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=miniopassword123
     ports:
-      - "9000:9000"   # API S3
-      - "9001:9001"   # Painel Web do MinIO
+      - "9000:9000"
+      - "9001:9001"
     volumes:
-      - minio_data:/data
+      - gabriel_minio_data:/data
+    networks:
+      - tom_hanks_net
+
+  catalogo_service:
+    build:
+      context: https://github.com/Gabriel33-fis/campuswap.git#main:catalogo_service
+    container_name: gabriel_catalogo_service
+    restart: always
+    command: sh -c "pip install requests redis prometheus-fastapi-instrumentator minio python-multipart && uvicorn main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8207:8000"
+    environment:
+      - AUTH_SERVICE_URL=http://auth_service:5000
+      - LOG_SERVICE_URL=http://log_service:6000
+      - DATABASE_URL=sqlite:////app/catalogo.db
+      - JWT_SECRET=chave_super_secreta_jwt_padrao
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=miniopassword123
+      - MINIO_BUCKET_NAME=campuswap-fotos
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 25s
+    depends_on:
+      - auth_service
+      - log_service
+      - minio
+      - redis
     networks:
       - tom_hanks_net
 
 volumes:
-  minio_data:
+  gabriel_minio_data:
 
 networks:
   tom_hanks_net:
