@@ -35,3 +35,7 @@ def verificar_premium(usuario: dict = Depends(obter_usuario_atual)) -> dict:
             detail="Acesso exclusivo para assinantes do Plano Premium."
         )
     return usuario
+
+
+# Alias para manter compatibilidade com a importação no main.py
+get_current_user = obter_usuario_atual
