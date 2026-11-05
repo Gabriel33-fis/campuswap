@@ -1,38 +1,40 @@
 import os
-from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+import pymysql
+from urllib.parse import urlparse
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if not DATABASE_URL:
-    DB_HOST = os.getenv("DB_HOST", "localhost")
-    DB_PORT = os.getenv("DB_PORT", "3306")
-    DB_USER = os.getenv("DB_USER", "root")
-    DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-    DB_NAME = os.getenv("DB_NAME", "catalogo_db")
-    DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+def get_db_connection():
+    """Retorna uma conexão direta PyMySQL compatível com cursor(dictionary=True)."""
+    if DATABASE_URL and DATABASE_URL.startswith("mysql"):
+        # Trata formato mysql://user:pass@host:port/dbname ou mysql+pymysql://...
+        clean_url = DATABASE_URL.replace("mysql+pymysql://", "mysql://")
+        parsed = urlparse(clean_url)
+        return pymysql.connect(
+            host=parsed.hostname or "mariadb",
+            port=parsed.port or 3306,
+            user=parsed.username or "root",
+            password=parsed.password or "",
+            database=parsed.path.lstrip("/"),
+            autocommit=True,
+            charset="utf8mb4"
+        )
+    else:
+        # Fallback para variáveis individuais de ambiente
+        return pymysql.connect(
+            host=os.getenv("DB_HOST", "mariadb"),
+            port=int(os.getenv("DB_PORT", "3306")),
+            user=os.getenv("DB_USER", "root"),
+            password=os.getenv("DB_PASSWORD", "rootpassword"),
+            database=os.getenv("DB_NAME", "campuswap_db"),
+            autocommit=True,
+            charset="utf8mb4"
+        )
 
-if DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        DATABASE_URL,
-        connect_args={"check_same_thread": False}
-    )
-else:
-    engine = create_engine(
-        DATABASE_URL,
-        pool_recycle=3600,
-        pool_pre_ping=True
-    )
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
+# Mantém get_db por compatibilidade caso alguma rota use Depends(get_db)
 def get_db():
-    db = SessionLocal()
+    conn = get_db_connection()
     try:
-        yield db
+        yield conn
     finally:
-        db.close()
-
-# Alias para compatibilidade com o main.py
-get_db_connection = get_db
+        conn.close()

@@ -9,6 +9,20 @@ from auth_guard import get_current_user
 from database import get_db_connection
 from storage import upload_imagem_item
 
+from fastapi.responses import FileResponse
+import os
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
+
+@app.get("/")
+def home():
+    index_path = os.path.join(os.path.dirname(__file__), "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"status": "CampuSwap API online", "docs": "/docs"}
+
 app = FastAPI(
     title="CampuSwap API",
     description="API do Marketplace Académico do Campus",
