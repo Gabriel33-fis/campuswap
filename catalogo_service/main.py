@@ -1,28 +1,41 @@
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
-from typing import List, Optional
-import json
-import redis
 import os
+import json
+from typing import List, Optional
+
+import redis
+import httpx
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Request, Response
+from fastapi.responses import FileResponse
 
 from schemas import ItemCreate, ItemUpdate, ItemResponse
 from auth_guard import get_current_user
 from database import get_db_connection
 from storage import upload_imagem_item
 
-from fastapi.responses import FileResponse
-import os
+# 1. Instanciação obrigatória da aplicação
+app = FastAPI(title="CampuSwap - Catálogo de Materiais")
 
-import httpx
-from fastapi import Request, Response
-
+# 2. Configurações de ambiente
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth_service:5000")
 
+# 3. Rotas de Infraestrutura e Frontend
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
+
+@app.get("/")
+def home():
+    index_path = os.path.join(os.path.dirname(__file__), "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"status": "CampuSwap API online", "docs": "/docs"}
+
+# 4. Proxies para autenticação
 @app.post("/api/usuarios")
 @app.post("/api/register")
 async def proxy_register(request: Request):
     body = await request.json()
     async with httpx.AsyncClient() as client:
-        # Tenta repassar para a rota /register ou /usuarios do auth_service
         try:
             res = await client.post(f"{AUTH_SERVICE_URL}/register", json=body, timeout=10.0)
             if res.status_code == 404:
