@@ -1,13 +1,11 @@
 import os
-import io
+from fastapi import UploadFile, HTTPException, status
 from minio import Minio
-from datetime import timedelta
-from fastapi import HTTPException, UploadFile
 
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "minio:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "miniopassword123")
-MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME", "perfil-fotos")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+MINIO_BUCKET = os.getenv("MINIO_BUCKET", "campuswap-fotos")
 
 # Inicializa o cliente MinIO
 minio_client = Minio(
@@ -17,66 +15,41 @@ minio_client = Minio(
     secure=False
 )
 
-def assegurar_bucket():
-    """Garante que o bucket dedicado do projeto existe no MinIO."""
-    try:
-        if not minio_client.bucket_exists(MINIO_BUCKET_NAME):
-            minio_client.make_bucket(MINIO_BUCKET_NAME)
-    except Exception as e:
-        print(f"Aviso MinIO ao criar/verificar bucket: {e}")
+# Cria o bucket se não existir
+if not minio_client.bucket_exists(MINIO_BUCKET):
+    minio_client.make_bucket(MINIO_BUCKET)
 
-def validar_e_enviar_foto(usuario_id: int, file: UploadFile) -> str:
-    """
-    Valida tipo MIME, extensão e tamanho do ficheiro (limite de 2MB).
-    Envia para o MinIO e devolve a chave do objeto[cite: 13, 14].
-    """
-    extensoes_permitidas = {
-        "image/jpeg": "jpg",
-        "image/png": "png",
-        "image/webp": "webp"
-    }
+TIPOS_PERMITIDOS = ["image/jpeg", "image/png", "image/webp"]
+TAMANHO_MAXIMO = 2 * 1024 * 1024  # 2 MB
 
-    if file.content_type not in extensoes_permitidas:
+async def upload_imagem_item(arquivo: UploadFile, item_id: int) -> str:
+    # 1. Validação de formato
+    if arquivo.content_type not in TIPOS_PERMITIDOS:
         raise HTTPException(
-            status_code=400,
-            detail="Tipo de ficheiro inválido. Apenas imagens JPEG, PNG ou WEBP são permitidas."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Formato inválido. Apenas JPEG, PNG e WEBP são permitidos."
         )
-
-    conteudo = file.file.read()
-    tamanho_bytes = len(conteudo)
-    max_tamanho = 2 * 1024 * 1024  # 2 MB
-
-    if tamanho_bytes > max_tamanho:
+    
+    # 2. Leitura do conteúdo e validação de tamanho
+    conteudo = await arquivo.read()
+    if len(conteudo) > TAMANHO_MAXIMO:
         raise HTTPException(
-            status_code=400,
-            detail="Ficheiro excede o tamanho máximo permitido de 2 MB."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="O ficheiro excede o tamanho máximo permitido de 2 MB."
         )
-
-    ext = extensoes_permitidas[file.content_type]
-    object_name = f"perfil_{usuario_id}.{ext}"
-
-    # Envia o ficheiro binário para o MinIO
+    
+    # 3. Definição do nome do objeto no bucket
+    extensao = arquivo.filename.split(".")[-1]
+    object_name = f"itens/item_{item_id}_{arquivo.filename}"
+    
+    # 4. Envio para o bucket
+    arquivo.file.seek(0)
     minio_client.put_object(
-        bucket_name=MINIO_BUCKET_NAME,
+        bucket_name=MINIO_BUCKET,
         object_name=object_name,
-        data=io.BytesIO(conteudo),
-        length=tamanho_bytes,
-        content_type=file.content_type
+        data=arquivo.file,
+        length=len(conteudo),
+        content_type=arquivo.content_type
     )
-
+    
     return object_name
-
-def obter_url_foto(object_name: str) -> str:
-    """
-    Devolve a rota relativa da API para exibição segura da imagem.
-    """
-    if not object_name:
-        return ""
-    return f"/api/perfil/foto/{object_name}"
-
-def obter_stream_imagem(object_name: str):
-    """Recupera o stream binário direto do MinIO."""
-    try:
-        return minio_client.get_object(MINIO_BUCKET_NAME, object_name)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Imagem não encontrada no storage.")

@@ -1,21 +1,33 @@
-from pydantic import BaseModel
-from typing import Optional, List
+from pydantic import BaseModel, Field
+from typing import Optional
+from datetime import datetime
 
-class FavoritoCriar(BaseModel):
-    tmdb_movie_id: int
-    titulo: str
-    poster_path: Optional[str] = None
+class ItemBase(BaseModel):
+    titulo: str = Field(..., max_length=150)
+    descricao: str
+    categoria_id: int
+    condicao: str = Field(..., description="novo, pouco_usado, marcas_de_uso")
+    modalidade: str = Field(..., description="venda, troca, emprestimo")
+    preco: Optional[float] = 0.0
 
-class ComentarioCriar(BaseModel):
-    tmdb_movie_id: int
-    texto: str
+class ItemCreate(ItemBase):
+    pass
 
-class PerfilUpdate(BaseModel):
-    bio: Optional[str] = ""
+class ItemUpdate(BaseModel):
+    titulo: Optional[str] = None
+    descricao: Optional[str] = None
+    categoria_id: Optional[int] = None
+    condicao: Optional[str] = None
+    modalidade: Optional[str] = None
+    preco: Optional[float] = None
+    status: Optional[str] = None
 
-class PerfilResponse(BaseModel):
+class ItemResponse(ItemBase):
+    id: int
     usuario_id: int
-    nome: Optional[str] = None
-    bio: str
-    foto_url: Optional[str] = None
-    favoritos: List[dict] = []
+    foto_key: Optional[str] = None
+    status: str
+    criado_em: datetime
+
+    class Config:
+        from_attributes = True

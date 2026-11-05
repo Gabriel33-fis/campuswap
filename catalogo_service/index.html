@@ -3,415 +3,85 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎬 Catálogo Tom Hanks</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        body { background-color: #141414; color: #fff; min-height: 100vh; display: flex; flex-direction: column; }
-        
-        /* Navbar */
-        nav { background: #000; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e50914; }
-        nav h1 { color: #e50914; font-size: 1.5rem; display: flex; align-items: center; gap: 10px; cursor: pointer; }
-        .user-panel { display: flex; align-items: center; gap: 12px; }
-        
-        /* Estilos do Plano Premium (Atividade 7) */
-        .badge-premium { background: #ffd700; color: #141414; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; letter-spacing: 0.5px; }
-        .btn-premium { background: linear-gradient(135deg, #ffd700, #ffb703); color: #000; border: none; padding: 7px 14px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; cursor: pointer; transition: opacity 0.2s; }
-        .btn-premium:hover { opacity: 0.9; }
-
-        .btn-logout { background: #333; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
-        .btn-logout:hover { background: #e50914; }
-
-        /* Container Principal */
-        .main-container { padding: 40px 20px; max-width: 1200px; margin: 0 auto; width: 100%; flex: 1; }
-
-        /* Cards e Auth Box */
-        .auth-card { max-width: 400px; margin: 40px auto; background: #1f1f1f; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-        .auth-card h2 { margin-bottom: 20px; color: #fff; text-align: center; }
-        .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 5px; color: #aaa; font-size: 0.9rem; }
-        .form-group input { width: 100%; padding: 12px; background: #333; border: 1px solid #444; border-radius: 4px; color: white; outline: none; }
-        .form-group input:focus { border-color: #e50914; }
-        
-        button.btn-primary { width: 100%; padding: 12px; background: #e50914; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; font-size: 1rem; margin-top: 10px; }
-        button.btn-primary:hover { background: #f40612; }
-        
-        .links-group { margin-top: 15px; display: flex; justify-content: space-between; font-size: 0.85rem; }
-        .link-text { color: #aaa; text-decoration: none; cursor: pointer; }
-        .link-text:hover { color: #fff; text-decoration: underline; }
-
-        .hidden { display: none !important; }
-        .msg { padding: 12px; border-radius: 4px; margin-bottom: 20px; font-size: 0.9rem; text-align: center; }
-        .msg.success { background: rgba(46, 125, 50, 0.2); border: 1px solid #2e7d32; color: #4caf50; }
-        .msg.error { background: rgba(198, 40, 40, 0.2); border: 1px solid #c62828; color: #ef5350; }
-
-        /* Grid de Filmes */
-        .catalogo-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .movies-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 25px; }
-        .movie-card { background: #222; border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; transition: transform 0.2s; }
-        .movie-card:hover { transform: scale(1.02); }
-        .movie-card img { width: 100%; height: 320px; object-fit: cover; }
-        .movie-info { padding: 12px; flex: 1; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; }
-        .movie-title { font-weight: bold; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .movie-meta { color: #888; font-size: 0.85rem; display: flex; justify-content: space-between; }
-        
-        /* Botão Favoritar */
-        .btn-favorito { background: #ffcc00; color: #000; border: none; border-radius: 4px; padding: 8px 10px; font-weight: bold; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 5px; }
-        .btn-favorito:hover { background: #e6b800; }
-    </style>
+    <title>CampuSwap — Marketplace Universitário</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 </head>
-<body>
+<body class="bg-gray-50 text-gray-800">
 
-    <nav>
-        <h1>🎬 Catálogo Tom Hanks</h1>
-        <div class="user-panel">
-            <span id="nav-user-info">Não conectado</span>
-            <span id="nav-badge-premium" class="badge-premium hidden">👑 PREMIUM</span>
-            <button id="btn-assinar-premium" class="btn-premium hidden" onclick="iniciarCheckoutStripe()">⭐ Assinar Premium</button>
-            <button id="btn-logout" class="btn-logout hidden" onclick="logout()">Sair</button>
+    <!-- Cabeçalho de Navegação -->
+    <header class="bg-indigo-700 text-white shadow-md">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+            <h1 class="text-2xl font-bold tracking-tight">📦 CampuSwap</h1>
+            <nav id="nav-actions">
+                <button onclick="mostrarLogin()" class="bg-white text-indigo-700 font-semibold px-4 py-2 rounded-lg shadow hover:bg-gray-100 transition">Entrar / Registar</button>
+            </nav>
         </div>
-    </nav>
+    </header>
 
-    <div class="main-container">
-        <!-- Banner global de avisos (ex: retorno da Stripe) -->
-        <div id="msg-global" class="msg hidden"></div>
+    <!-- Secção Pública (Landing Page) -->
+    <section id="landing-hero" class="py-16 bg-gradient-to-r from-indigo-600 to-indigo-800 text-white text-center px-4">
+        <div class="max-w-3xl mx-auto">
+            <h2 class="text-4xl font-extrabold mb-4">O marketplace colaborativo do seu campus</h2>
+            <p class="text-lg text-indigo-100 mb-8">
+                Compre, venda, troque ou peça livros, calculadoras e materiais académicos emprestados diretamente a outros estudantes.
+            </p>
+            <button onclick="mostrarCadastro()" class="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-3 rounded-lg text-lg shadow-lg transition">Criar Conta Gratuita</button>
+        </div>
+    </section>
 
-        <!-- 1. TELA DE LOGIN -->
-        <div id="box-login" class="auth-card">
-            <h2>Login</h2>
-            <div class="form-group">
-                <label>E-mail:</label>
-                <input type="email" id="login-email" placeholder="seu@email.com">
-            </div>
-            <div class="form-group">
-                <label>Senha:</label>
-                <input type="password" id="login-senha" placeholder="Sua senha">
-            </div>
-            <button class="btn-primary" onclick="fazerLogin()">Entrar</button>
-            <div class="links-group">
-                <a class="link-text" onclick="alternarTela('box-forgot')">Esqueci a senha</a>
-                <a class="link-text" onclick="alternarTela('box-register')">Cadastre-se</a>
-            </div>
-            <div id="msg-login" class="msg hidden"></div>
+    <!-- Vitrine Principal de Materiais -->
+    <main class="max-w-6xl mx-auto px-4 py-12">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-2xl font-bold text-gray-800">Materiais Disponíveis no Campus</h3>
+            <button onclick="abrirModalNovoItem()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-indigo-700">+ Anunciar Material</button>
         </div>
 
-        <!-- 2. TELA DE CADASTRO -->
-        <div id="box-register" class="auth-card hidden">
-            <h2>Criar Conta</h2>
-            <div class="form-group">
-                <label>Nome:</label>
-                <input type="text" id="reg-nome" placeholder="Seu nome">
-            </div>
-            <div class="form-group">
-                <label>E-mail:</label>
-                <input type="email" id="reg-email" placeholder="seu@email.com">
-            </div>
-            <div class="form-group">
-                <label>Senha:</label>
-                <input type="password" id="reg-senha" placeholder="Crie uma senha">
-            </div>
-            <button class="btn-primary" onclick="fazerCadastro()">Cadastrar</button>
-            <div class="links-group" style="justify-content: center;">
-                <a class="link-text" onclick="alternarTela('box-login')">Já tem conta? Entrar</a>
-            </div>
-            <div id="msg-reg" class="msg hidden"></div>
+        <!-- Grade de Produtos -->
+        <div id="grid-itens" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+            <!-- Renderizado dinamicamente via JavaScript com /api/itens -->
         </div>
-
-        <!-- 3. TELA DE ESQUECI MINHA SENHA -->
-        <div id="box-forgot" class="auth-card hidden">
-            <h2>Recuperar Senha</h2>
-            <p style="color: #aaa; font-size: 0.85rem; margin-bottom: 15px; text-align: center;">Informe seu e-mail cadastrado para enviarmos o link de recuperação (Mailtrap).</p>
-            <div class="form-group">
-                <label>E-mail cadastrado:</label>
-                <input type="email" id="forgot-email" placeholder="seu@email.com">
-            </div>
-            <button class="btn-primary" onclick="solicitarRecuperacao()">Enviar E-mail</button>
-            <div class="links-group">
-                <a class="link-text" onclick="alternarTela('box-reset')">Já tenho um token</a>
-                <a class="link-text" onclick="alternarTela('box-login')">Voltar ao login</a>
-            </div>
-            <div id="msg-forgot" class="msg hidden"></div>
-        </div>
-
-        <!-- 4. TELA DE REDEFINIR SENHA -->
-        <div id="box-reset" class="auth-card hidden">
-            <h2>Redefinir Senha</h2>
-            <div class="form-group">
-                <label>Token recebido:</label>
-                <input type="text" id="reset-token" placeholder="Cole o token do Mailtrap">
-            </div>
-            <div class="form-group">
-                <label>Nova Senha:</label>
-                <input type="password" id="reset-nova-senha" placeholder="Digite a nova senha">
-            </div>
-            <button class="btn-primary" onclick="redefinirSenha()">Alterar Senha</button>
-            <div class="links-group" style="justify-content: center;">
-                <a class="link-text" onclick="alternarTela('box-login')">Voltar ao Login</a>
-            </div>
-            <div id="msg-reset" class="msg hidden"></div>
-        </div>
-
-        <!-- 5. CATÁLOGO DE FILMES (EXIBIDO APÓS O LOGIN) -->
-        <div id="box-catalogo" class="hidden">
-            <div class="catalogo-header">
-                <h2>Filmes de Tom Hanks</h2>
-            </div>
-            <div id="movies-container" class="movies-grid"></div>
-        </div>
-
-    </div>
+    </main>
 
     <script>
-        const API_AUTH = '/api/auth';
-        const API_CATALOGO = '/api/catalogo';
+        const API_URL = '/api';
 
-        function alternarTela(idExibir) {
-            ['box-login', 'box-register', 'box-forgot', 'box-reset', 'box-catalogo'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.classList.add('hidden');
-            });
-            document.getElementById(idExibir).classList.remove('hidden');
-        }
-
-        function exibirAviso(elemId, texto, ehErro = false) {
-            const el = document.getElementById(elemId);
-            el.className = 'msg ' + (ehErro ? 'error' : 'success');
-            el.innerText = texto;
-            el.classList.remove('hidden');
-        }
-
-        function atualizarPainelUsuario(nome, papel, isPremium) {
-            document.getElementById('nav-user-info').innerText = `${nome} [${papel}]`;
-            document.getElementById('btn-logout').classList.remove('hidden');
-
-            const badge = document.getElementById('nav-badge-premium');
-            const btnAssinar = document.getElementById('btn-assinar-premium');
-
-            if (isPremium) {
-                badge.classList.remove('hidden');
-                btnAssinar.classList.add('hidden');
-            } else {
-                badge.classList.add('hidden');
-                btnAssinar.classList.remove('hidden');
-            }
-        }
-
-        async function fazerLogin() {
-            const email = document.getElementById('login-email').value;
-            const senha = document.getElementById('login-senha').value;
+        async function carregarItens() {
             try {
-                const res = await fetch(`${API_AUTH}/login`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, senha })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || 'Falha no login');
-                
-                localStorage.setItem('token', data.access_token);
-                localStorage.setItem('usuario_nome', data.usuario_nome);
-                localStorage.setItem('papel', data.papel || 'usuario');
-                localStorage.setItem('is_premium', data.is_premium ? 'true' : 'false');
-                
-                atualizarPainelUsuario(data.usuario_nome, data.papel || 'usuario', data.is_premium);
-                alternarTela('box-catalogo');
-                carregarFilmes();
-            } catch (err) {
-                exibirAviso('msg-login', err.message, true);
-            }
-        }
+                const res = await fetch(`${API_URL}/itens`);
+                const itens = await res.json();
+                const grid = document.getElementById('grid-itens');
+                grid.innerHTML = '';
 
-        async function fazerCadastro() {
-            const nome = document.getElementById('reg-nome').value;
-            const email = document.getElementById('reg-email').value;
-            const senha = document.getElementById('reg-senha').value;
-            try {
-                const res = await fetch(`${API_AUTH}/register`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ nome, email, senha, papel: 'usuario' })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || 'Falha no cadastro');
-                exibirAviso('msg-reg', 'Conta criada! Faça o login.');
-                setTimeout(() => alternarTela('box-login'), 1200);
-            } catch (err) {
-                exibirAviso('msg-reg', err.message, true);
-            }
-        }
-
-        async function solicitarRecuperacao() {
-            const email = document.getElementById('forgot-email').value;
-            try {
-                const res = await fetch(`${API_AUTH}/forgot-password`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email })
-                });
-                const data = await res.json();
-                exibirAviso('msg-forgot', data.message || 'Verifique o e-mail no Mailtrap!');
-            } catch (err) {
-                exibirAviso('msg-forgot', 'Erro ao enviar solicitação.', true);
-            }
-        }
-
-        async function redefinirSenha() {
-            const token = document.getElementById('reset-token').value;
-            const nova_senha = document.getElementById('reset-nova-senha').value;
-            try {
-                const res = await fetch(`${API_AUTH}/reset-password`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token, nova_senha })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || 'Token inválido ou expirado');
-                exibirAviso('msg-reset', 'Senha alterada com sucesso!');
-                setTimeout(() => alternarTela('box-login'), 1500);
-            } catch (err) {
-                exibirAviso('msg-reset', err.message, true);
-            }
-        }
-
-        async function carregarFilmes() {
-            const token = localStorage.getItem('token');
-            try {
-                const res = await fetch(`${API_CATALOGO}/filmes`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (!res.ok) throw new Error();
-                const filmes = await res.json();
-                const container = document.getElementById('movies-container');
-                container.innerHTML = '';
-                
-                filmes.forEach(f => {
-                    const poster = f.poster_url || (f.poster_path ? 'https://image.tmdb.org/t/p/w500' + f.poster_path : 'https://via.placeholder.com/300x450?text=Sem+Poster');
-                    const titulo = (f.titulo || f.title || '').replace(/'/g, "\\'");
-                    const idFilme = f.id || f.tmdb_movie_id || 0;
-
-                    container.innerHTML += `
-                        <div class="movie-card">
-                            <img src="${poster}" alt="${titulo}">
-                            <div class="movie-info">
-                                <div>
-                                    <div class="movie-title">${titulo}</div>
-                                    <div class="movie-meta">
-                                        <span>${f.ano_lancamento || f.release_date || ''}</span>
-                                        <span>⭐ ${f.avaliacao || f.vote_average || 'N/A'}</span>
-                                    </div>
-                                </div>
-                                <button class="btn-favorito" onclick="favoritar(${idFilme}, '${titulo}', '${poster}')">⭐ Favorito</button>
-                            </div>
-                        </div>
-                    `;
-                });
-            } catch (e) {
-                console.log("Erro ao carregar catálogo.");
-            }
-        }
-
-        /* FUNÇÃO DE FAVORITAR COM TRATAMENTO DO LIMITE DE 3 */
-        async function favoritar(id, titulo, poster) {
-            const token = localStorage.getItem('token');
-            if (!token) {
-                alert('Faça login primeiro!');
-                return;
-            }
-            try {
-                const res = await fetch('/api/favoritos', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({
-                        tmdb_movie_id: Number(id),
-                        titulo: titulo,
-                        poster_path: poster || ''
-                    })
-                });
-                const data = await res.json();
-
-                if (res.status === 403) {
-                    alert('⚠️ ' + data.detail); // Limite atingido (Print 1 da entrega)
+                if (itens.length === 0) {
+                    grid.innerHTML = '<p class="text-gray-500 col-span-3">Nenhum material anunciado no momento.</p>';
                     return;
                 }
 
-                if (!res.ok) {
-                    throw new Error(data.detail || 'Falha ao favoritar');
-                }
-
-                alert(`"${titulo}" adicionado aos favoritos com sucesso!`);
-            } catch (err) {
-                alert('Erro: ' + err.message);
-            }
-        }
-
-        /* FLUXO STRIPE CHECKOUT (ATIVIDADE 7) */
-        async function iniciarCheckoutStripe() {
-            const token = localStorage.getItem('token');
-            if (!token) {
-                alert('Faça login primeiro para assinar!');
-                return;
-            }
-            try {
-                const res = await fetch('/api/stripe/checkout', {
-                    method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}` 
-                    }
+                itens.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = "bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col justify-between p-5";
+                    card.innerHTML = `
+                        <div>
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="text-xs uppercase font-bold tracking-wider px-2 py-1 bg-indigo-100 text-indigo-800 rounded">${item.modalidade}</span>
+                                <span class="text-sm font-semibold text-green-600">${item.preco > 0 ? 'R$ ' + item.preco.toFixed(2) : 'Grátis / Troca'}</span>
+                            </div>
+                            <h4 class="text-lg font-bold text-gray-900 mb-2">${item.titulo}</h4>
+                            <p class="text-sm text-gray-600 mb-4">${item.descricao}</p>
+                        </div>
+                        <div class="border-t pt-3 flex justify-between items-center">
+                            <span class="text-xs text-gray-400 capitalize">Condição: ${item.condicao.replace('_', ' ')}</span>
+                            <button onclick="verDetalhes(${item.id})" class="text-indigo-600 font-semibold text-sm hover:underline">Ver detalhes</button>
+                        </div>
+                    `;
+                    grid.appendChild(card);
                 });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || 'Falha ao iniciar checkout.');
-                if (data.url) {
-                    window.location.href = data.url;
-                }
             } catch (err) {
-                alert('Erro ao redirecionar para o pagamento Stripe: ' + err.message);
+                console.error("Erro ao carregar catálogo:", err);
             }
         }
 
-        function logout() {
-            localStorage.clear();
-            document.getElementById('nav-user-info').innerText = 'Não conectado';
-            document.getElementById('nav-badge-premium').classList.add('hidden');
-            document.getElementById('btn-assinar-premium').classList.add('hidden');
-            document.getElementById('btn-logout').classList.add('hidden');
-            alternarTela('box-login');
-        }
-
-        window.onload = () => {
-            const params = new URLSearchParams(window.location.search);
-            
-            // Retorno de link do Mailtrap
-            const token = params.get('token');
-            if (token) {
-                alternarTela('box-reset');
-                document.getElementById('reset-token').value = token;
-                return;
-            }
-
-            // Retorno de sucesso do Stripe Checkout
-            if (params.get('session_id')) {
-                exibirAviso('msg-global', '🎉 Pagamento confirmado pelo Stripe! Sua conta agora é Premium.');
-            } else if (params.get('status') === 'cancelado') {
-                exibirAviso('msg-global', 'O checkout do Stripe foi cancelado.', true);
-            }
-
-            // Verificação de sessão salva
-            const savedToken = localStorage.getItem('token');
-            const nome = localStorage.getItem('usuario_nome');
-            const papel = localStorage.getItem('papel');
-            const isPremium = localStorage.getItem('is_premium') === 'true';
-
-            if (savedToken && nome) {
-                atualizarPainelUsuario(nome, papel || 'usuario', isPremium);
-                alternarTela('box-catalogo');
-                carregarFilmes();
-            } else {
-                alternarTela('box-login');
-            }
-        };
+        document.addEventListener('DOMContentLoaded', carregarItens);
     </script>
 </body>
 </html>
