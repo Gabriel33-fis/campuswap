@@ -12,6 +12,36 @@ from storage import upload_imagem_item
 from fastapi.responses import FileResponse
 import os
 
+import httpx
+from fastapi import Request, Response
+
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth_service:5000")
+
+@app.post("/api/usuarios")
+@app.post("/api/register")
+async def proxy_register(request: Request):
+    body = await request.json()
+    async with httpx.AsyncClient() as client:
+        # Tenta repassar para a rota /register ou /usuarios do auth_service
+        try:
+            res = await client.post(f"{AUTH_SERVICE_URL}/register", json=body, timeout=10.0)
+            if res.status_code == 404:
+                res = await client.post(f"{AUTH_SERVICE_URL}/usuarios", json=body, timeout=10.0)
+            return Response(content=res.content, status_code=res.status_code, media_type="application/json")
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Erro ao comunicar com auth_service: {str(e)}")
+
+@app.post("/api/login")
+@app.post("/api/auth/login")
+async def proxy_login(request: Request):
+    body = await request.json()
+    async with httpx.AsyncClient() as client:
+        try:
+            res = await client.post(f"{AUTH_SERVICE_URL}/login", json=body, timeout=10.0)
+            return Response(content=res.content, status_code=res.status_code, media_type="application/json")
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Erro ao comunicar com auth_service: {str(e)}")
+
 app = FastAPI(
     title="CampuSwap API",
     description="API do Marketplace Académico do Campus",
