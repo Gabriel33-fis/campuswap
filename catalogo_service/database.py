@@ -33,3 +33,6 @@ def get_db():
         yield db
     finally:
         db.close()
+
+# Alias para compatibilidade com o main.py
+get_db_connection = get_db
