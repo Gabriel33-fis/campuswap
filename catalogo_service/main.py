@@ -12,6 +12,12 @@ from storage import upload_imagem_item
 from fastapi.responses import FileResponse
 import os
 
+app = FastAPI(
+    title="CampuSwap API",
+    description="API do Marketplace Académico do Campus",
+    version="1.0.0"
+)
+
 @app.get("/health")
 def health():
     return {"status": "healthy"}
@@ -22,12 +28,6 @@ def home():
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"status": "CampuSwap API online", "docs": "/docs"}
-
-app = FastAPI(
-    title="CampuSwap API",
-    description="API do Marketplace Académico do Campus",
-    version="1.0.0"
-)
 
 # Conexão com o Redis para eventos de auditoria e negócio
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
