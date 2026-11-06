@@ -439,31 +439,52 @@
       }
     }
 
-    async function realizarCadastro(e) {
-      e.preventDefault();
-      const erroEl = document.getElementById('cad-erro');
-      erroEl.classList.add('hidden');
-      const nome = document.getElementById('cad-nome').value;
-      const email = document.getElementById('cad-email').value;
-      const senha = document.getElementById('cad-senha').value;
+async function cadastrarItem(e) {
+  e.preventDefault();
+  const token = localStorage.getItem('token');
+  const erroEl = document.getElementById('item-erro');
+  erroEl.classList.add('hidden');
 
-      try {
-        const res = await fetch(`${API_BASE}/api/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ nome, email, senha })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Erro ao registrar.');
+  const titulo = document.getElementById('item-titulo').value.trim();
+  const modalidade = document.getElementById('item-modalidade').value;
+  const preco = parseFloat(document.getElementById('item-preco').value) || 0.0;
+  const descricao = document.getElementById('item-descricao').value.trim();
 
-        fecharModais();
-        mostrarToast('Conta criada com sucesso! Faça login.');
-        mostrarLogin();
-      } catch (err) {
-        erroEl.textContent = err.message;
-        erroEl.classList.remove('hidden');
-      }
+  // Payload completo esperado por ItemCreate
+  const payload = {
+    titulo: titulo,
+    descricao: descricao,
+    preco: preco,
+    modalidade: modalidade,
+    status: "disponivel",
+    categoria_id: 1
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/api/itens`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    });
+    
+    const data = await res.json();
+    if (!res.ok) {
+      // Se houver erro de validação (422), detalha qual campo falhou
+      const msg = data.detail ? (Array.isArray(data.detail) ? data.detail.map(d => `${d.loc.slice(-1)}: ${d.msg}`).join(', ') : data.detail) : 'Erro ao cadastrar material.';
+      throw new Error(msg);
     }
+
+    fecharModais();
+    carregarItens();
+    mostrarToast('Material anunciado no campus com sucesso!');
+  } catch (err) {
+    erroEl.textContent = err.message;
+    erroEl.classList.remove('hidden');
+  }
+}
 
     async function cadastrarItem(e) {
       e.preventDefault();

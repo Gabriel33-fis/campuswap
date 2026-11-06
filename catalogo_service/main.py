@@ -51,6 +51,22 @@ async def proxy_login(request: Request):
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Erro ao conectar ao auth_service: {str(e)}")
 
+@app.post("/api/checkout")
+async def proxy_checkout(request: Request):
+    auth_header = request.headers.get("Authorization")
+    headers = {"Authorization": auth_header} if auth_header else {}
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            res = await client.post(f"{AUTH_SERVICE_URL}/checkout", headers=headers, timeout=15.0)
+            return Response(
+                content=res.content,
+                status_code=res.status_code,
+                media_type="application/json"
+            )
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Erro ao conectar com auth_service: {str(e)}")        
+
 # (Mantenha os endpoints existentes de listar_itens, obter_item, etc. abaixo)
 
 
