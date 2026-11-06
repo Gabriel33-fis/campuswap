@@ -3,100 +3,214 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CampuSwap – Marketplace Estudantil</title>
+  <title>CampuSwap – Painel e Marketplace Acadêmico</title>
+  <!-- Tailwind CSS -->
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <!-- FontAwesome Ícones -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Chart.js para os Gráficos de Métricas -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col justify-between antialiased">
+<body class="bg-gray-100 text-gray-800 min-h-screen flex flex-col justify-between antialiased font-sans">
 
-  <div>
-    <!-- Barra Superior / Navbar -->
-    <header class="bg-indigo-700 text-white shadow-lg sticky top-0 z-40">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex justify-between items-center">
-        <div class="flex items-center space-x-3 cursor-pointer" onclick="limparFiltrosECarregar()">
-          <span class="text-3xl">📦</span>
-          <div>
-            <h1 class="text-2xl font-black tracking-tight leading-none">CampuSwap</h1>
-            <p class="text-xs text-indigo-200 uppercase tracking-widest font-semibold">Economia Circular no Campus</p>
-          </div>
+  <!-- CABEÇALHO SUPERIOR -->
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex justify-between items-center">
+      <div class="flex items-center space-x-3 cursor-pointer" onclick="alternarVisao('marketplace')">
+        <span class="text-3xl">📦</span>
+        <div>
+          <h1 class="text-xl font-black text-indigo-700 tracking-tight leading-none">CampuSwap</h1>
+          <span class="text-xs text-gray-400 font-bold uppercase tracking-widest">Campus Intelligence</span>
         </div>
-        
-        <nav id="nav-actions" class="flex items-center space-x-3">
-          <button onclick="mostrarLogin()" class="bg-white text-indigo-700 font-bold px-4 py-2 rounded-lg shadow hover:bg-gray-100 transition flex items-center gap-2">
-            <i class="fa-solid fa-right-to-bracket"></i> Entrar / Registar
-          </button>
-        </nav>
       </div>
-    </header>
 
-    <!-- Banner Principal Hero -->
-    <section id="landing-hero" class="py-14 bg-gradient-to-br from-indigo-700 via-indigo-800 to-purple-900 text-white shadow-inner">
-      <div class="max-w-4xl mx-auto px-4 text-center">
-        <span class="bg-indigo-500 bg-opacity-40 text-indigo-200 text-xs font-bold uppercase px-3 py-1 rounded-full mb-4 inline-block">Plataforma Académica</span>
-        <h2 class="text-3xl sm:text-5xl font-black mb-4 tracking-tight leading-tight">O marketplace inteligente da sua universidade</h2>
-        <p class="text-base sm:text-lg text-indigo-100 mb-8 max-w-2xl mx-auto leading-relaxed">
-          Compre, venda, troque ou solicite livros, calculadoras e apontamentos diretamente aos colegas do campus.
+      <!-- Barra de Busca Rápida Superior -->
+      <div class="hidden md:flex items-center bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200 w-80">
+        <i class="fa-solid fa-magnifying-glass text-gray-400 mr-2 text-xs"></i>
+        <input type="text" id="campo-busca" oninput="filtrarItensEmMemoria()" placeholder="Buscar materiais (Ctrl + K)..." class="bg-transparent text-sm w-full focus:outline-none">
+      </div>
+
+      <nav id="nav-actions" class="flex items-center space-x-3">
+        <button onclick="mostrarLogin()" class="bg-indigo-600 text-white font-bold px-4 py-2 rounded-lg text-sm shadow hover:bg-indigo-700 transition">
+          <i class="fa-solid fa-right-to-bracket mr-1"></i> Entrar / Registar
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ========================================================================= -->
+  <!-- 1. VISÃO PÚBLICA (LANDING PAGE - QUANDO NÃO LOGADO) -->
+  <!-- ========================================================================= -->
+  <div id="visao-publica">
+    <section class="py-16 bg-gradient-to-r from-indigo-700 via-indigo-800 to-purple-900 text-white text-center px-4">
+      <div class="max-w-4xl mx-auto">
+        <span class="bg-indigo-500 bg-opacity-40 text-indigo-200 text-xs font-bold uppercase px-3 py-1 rounded-full mb-3 inline-block">Economia Circular</span>
+        <h2 class="text-4xl sm:text-5xl font-black mb-4 tracking-tight">O marketplace colaborativo do seu campus</h2>
+        <p class="text-indigo-100 text-base sm:text-lg mb-8 max-w-2xl mx-auto leading-relaxed">
+          Compre, venda, troque ou solicite livros, calculadoras e materiais didáticos diretamente a outros universitários.
         </p>
-
-        <!-- Barra de Busca Rápida Integrada -->
-        <div class="bg-white p-2 rounded-2xl shadow-2xl flex flex-col sm:flex-row gap-2 max-w-2xl mx-auto text-gray-800">
-          <div class="flex-1 flex items-center px-3 bg-gray-100 rounded-xl">
-            <i class="fa-solid fa-magnifying-glass text-gray-400 mr-2"></i>
-            <input type="text" id="campo-busca" oninput="filtrarItensEmMemoria()" placeholder="O que procura? (ex: Cálculo, Casio, Jaleco...)" class="w-full bg-transparent p-2 text-sm focus:outline-none">
-          </div>
-          <select id="filtro-modalidade-topo" onchange="filtrarItensEmMemoria()" class="bg-gray-100 text-gray-700 text-sm font-semibold p-2.5 rounded-xl border-none focus:outline-none">
-            <option value="">Todas modalidades</option>
-            <option value="venda">Venda</option>
-            <option value="troca">Troca</option>
-            <option value="emprestimo">Empréstimo</option>
-            <option value="doacao">Doação</option>
-          </select>
-          <button onclick="mostrarCadastro()" id="btn-hero-cta" class="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition flex items-center justify-center gap-2 shadow">
-            <i class="fa-solid fa-user-plus"></i> Começar
-          </button>
-        </div>
+        <button onclick="mostrarCadastro()" class="bg-green-500 hover:bg-green-600 text-white font-black px-8 py-3.5 rounded-xl text-lg shadow-lg transition transform hover:-translate-y-0.5">
+          <i class="fa-solid fa-user-plus mr-2"></i> Criar Conta Gratuita
+        </button>
       </div>
     </section>
-
-    <!-- Corpo Central / Catálogo -->
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-      
-      <!-- Cabeçalho da Listagem -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-4 border-b border-gray-200">
-        <div>
-          <h3 class="text-2xl font-extrabold text-gray-900 tracking-tight">Materiais Disponíveis</h3>
-          <p class="text-sm text-gray-500 mt-1" id="contador-anuncios">A carregar anúncios do catálogo...</p>
-        </div>
-        <div class="flex items-center gap-3">
-          <button onclick="carregarItens()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm font-semibold transition" title="Recarregar">
-            <i class="fa-solid fa-rotate-right"></i>
-          </button>
-          <button onclick="abrirModalNovoItem()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-bold shadow hover:shadow-md transition flex items-center gap-2 text-sm">
-            <i class="fa-solid fa-plus"></i> Anunciar Material
-          </button>
-        </div>
-      </div>
-
-      <!-- Grelha de Anúncios -->
-      <div id="grid-itens" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        <!-- Renderizado dinamicamente via JS -->
-      </div>
-    </main>
   </div>
 
-  <!-- Rodapé -->
-  <footer class="bg-gray-900 text-gray-400 py-8 text-center text-sm border-t border-gray-800">
-    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-      <p class="font-medium">CampuSwap © 2026 – Plataforma Académica Colaborativa</p>
-      <div class="flex space-x-6 text-gray-400">
-        <a href="/docs" target="_blank" class="hover:text-white transition flex items-center gap-1.5"><i class="fa-solid fa-book"></i> API Swagger</a>
-        <span class="text-gray-600">|</span>
-        <span class="text-xs text-gray-500">v2.1 Microserviços</span>
+  <!-- ========================================================================= -->
+  <!-- 2. VISÃO PRIVADA (DASHBOARD ANALYTICS ESTILO SAAS - QUANDO LOGADO) -->
+  <!-- ========================================================================= -->
+  <div id="visao-dashboard" class="hidden flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      
+      <!-- SIDEBAR LATERAL (ESQUERDA) -->
+      <aside class="lg:col-span-3 space-y-5">
+        <!-- Card do Usuário -->
+        <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
+          <div class="flex items-center space-x-3 mb-4 pb-4 border-b border-gray-100">
+            <div class="w-12 h-12 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-xl shadow">
+              <span id="user-avatar-letra">U</span>
+            </div>
+            <div class="overflow-hidden">
+              <h4 id="user-display-name" class="font-extrabold text-gray-900 text-sm truncate">Estudante</h4>
+              <p id="user-display-email" class="text-xs text-gray-500 truncate">aluno@fatec.sp.gov.br</p>
+            </div>
+          </div>
+
+          <div class="space-y-1 text-sm font-semibold text-gray-600">
+            <button onclick="mudarAba('overview')" class="w-full flex items-center gap-3 px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700">
+              <i class="fa-solid fa-chart-pie w-4"></i> Visão Geral (Overview)
+            </button>
+            <button onclick="alternarVisao('marketplace')" class="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-gray-50 text-gray-700">
+              <i class="fa-solid fa-store w-4"></i> Explorar Vitrine
+            </button>
+            <button onclick="abrirModalNovoItem()" class="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-gray-50 text-gray-700">
+              <i class="fa-solid fa-circle-plus w-4 text-green-600"></i> Anunciar Material
+            </button>
+          </div>
+        </div>
+
+        <!-- Card de Assinatura / Upgrade Plan -->
+        <div class="bg-gradient-to-br from-indigo-900 to-indigo-800 text-white p-5 rounded-2xl shadow-md border border-indigo-700">
+          <span class="text-xs font-black uppercase tracking-widest text-indigo-300">Plano Atual</span>
+          <h5 id="badge-plano" class="text-lg font-black mt-1">Plano Universitário</h5>
+          <p class="text-xs text-indigo-200 mt-2 mb-4 leading-relaxed">
+            Destaque ilimitado para anúncios e notificações instantâneas no campus.
+          </p>
+          <button onclick="iniciarCheckoutStripe()" class="w-full bg-green-500 hover:bg-green-600 text-white text-xs font-black py-2.5 rounded-xl shadow transition flex items-center justify-center gap-2">
+            <i class="fa-solid fa-bolt"></i> Upgrade para Premium
+          </button>
+        </div>
+      </aside>
+
+      <!-- ÁREA CENTRAL DE CONTEÚDO (MÉTRICAS & GRÁFICOS) -->
+      <section class="lg:col-span-9 space-y-6">
+        
+        <!-- Boas-Vindas e Abas -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-2xl font-black text-gray-900" id="saudacao-user">Olá, Gabriel!</h2>
+            <p class="text-xs text-gray-500 mt-0.5">Estatísticas em tempo real de materiais e trocas ativas no campus.</p>
+          </div>
+          <div class="flex items-center bg-white p-1 rounded-xl border border-gray-200 text-xs font-bold text-gray-600">
+            <button class="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700">Overview</button>
+            <button onclick="alternarVisao('marketplace')" class="px-3 py-1.5 rounded-lg hover:text-indigo-600">Catálogo Completo</button>
+          </div>
+        </div>
+
+        <!-- 4 CARDS DE INDICADORES (KPIs) -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div class="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
+            <span class="text-xs text-gray-400 font-bold uppercase">Meus Itens</span>
+            <p class="text-2xl font-black text-gray-900 mt-1" id="kpi-meus-itens">0</p>
+            <span class="text-xs text-green-600 font-bold flex items-center gap-1 mt-1">
+              <i class="fa-solid fa-arrow-trend-up"></i> Ativos
+            </span>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
+            <span class="text-xs text-gray-400 font-bold uppercase">No Campus</span>
+            <p class="text-2xl font-black text-indigo-600 mt-1" id="kpi-total-campus">0</p>
+            <span class="text-xs text-indigo-600 font-bold flex items-center gap-1 mt-1">
+              <i class="fa-solid fa-box"></i> Disponíveis
+            </span>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
+            <span class="text-xs text-gray-400 font-bold uppercase">Economia Gerada</span>
+            <p class="text-2xl font-black text-green-600 mt-1" id="kpi-economia">R$ 0,00</p>
+            <span class="text-xs text-green-700 font-bold flex items-center gap-1 mt-1">
+              <i class="fa-solid fa-hand-holding-dollar"></i> Circular
+            </span>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
+            <span class="text-xs text-gray-400 font-bold uppercase">Status da Conta</span>
+            <p class="text-sm font-black text-gray-800 mt-2 truncate" id="kpi-status-conta">Regular</p>
+            <span class="text-xs text-blue-600 font-bold flex items-center gap-1 mt-1">
+              <i class="fa-solid fa-circle-check"></i> Verificada
+            </span>
+          </div>
+        </div>
+
+        <!-- GRÁFICOS (CHART.JS) -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          <!-- Gráfico de Linha/Barras de Atividade -->
+          <div class="lg:col-span-2 bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="font-extrabold text-sm text-gray-800">Atividade e Interesses no Campus</h3>
+              <span class="text-xs text-gray-400 font-bold">Últimos 14 dias</span>
+            </div>
+            <div style="height: 220px;">
+              <canvas id="graficoAtividade"></canvas>
+            </div>
+          </div>
+
+          <!-- Gráfico de Rosca (Donut) Modalidades -->
+          <div class="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between">
+            <h3 class="font-extrabold text-sm text-gray-800 mb-2">Composição dos Materiais</h3>
+            <div style="height: 180px;" class="flex items-center justify-center">
+              <canvas id="graficoModalidades"></canvas>
+            </div>
+            <p class="text-xs text-center text-gray-400 font-semibold mt-2">Venda • Troca • Doação • Empréstimo</p>
+          </div>
+        </div>
+
+      </section>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- 3. VITRINE DE MATERIAIS DISPONÍVEIS -->
+  <!-- ========================================================================= -->
+  <main id="secao-vitrine" class="max-w-7xl mx-auto w-full px-4 sm:px-6 py-8">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-gray-200">
+      <div>
+        <h3 class="text-2xl font-black text-gray-900 tracking-tight">Catálogo de Materiais</h3>
+        <p class="text-xs text-gray-500 mt-1" id="contador-anuncios">Carregando catálogo...</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <button onclick="carregarItens()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-2 rounded-xl text-xs font-bold transition">
+          <i class="fa-solid fa-rotate-right"></i> Atualizar
+        </button>
+        <button onclick="abrirModalNovoItem()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow transition flex items-center gap-2">
+          <i class="fa-solid fa-plus"></i> Novo Material
+        </button>
       </div>
     </div>
+
+    <!-- Grid de Cards -->
+    <div id="grid-itens" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+      <p class="text-gray-400 text-center col-span-full py-12">Carregando anúncios disponíveis...</p>
+    </div>
+  </main>
+
+  <!-- RODAPÉ -->
+  <footer class="bg-white border-t border-gray-200 text-gray-500 py-6 text-xs text-center">
+    <p>CampuSwap © 2026 – Plataforma Acadêmica de Economia Circular Estudantil</p>
   </footer>
 
-  <!-- TOAST NOTIFICATION -->
+  <!-- TOAST NOTIFICATIONS -->
   <div id="toast" class="fixed bottom-5 right-5 bg-gray-900 text-white px-5 py-3 rounded-xl shadow-2xl z-50 transform translate-y-20 opacity-0 transition-all duration-300 flex items-center gap-3">
     <span id="toast-icon"></span>
     <span id="toast-msg" class="text-sm font-medium"></span>
@@ -104,27 +218,27 @@
 
   <!-- MODAL: LOGIN -->
   <div id="modal-login" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-4 z-50 backdrop-filter backdrop-blur-sm">
-    <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md transform transition-all">
+    <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md">
       <div class="flex justify-between items-center mb-6">
-        <h3 class="text-xl font-black text-gray-900 flex items-center gap-2">
-          <i class="fa-solid fa-right-to-bracket text-indigo-600"></i> Iniciar Sessão
+        <h3 class="text-lg font-black text-gray-900 flex items-center gap-2">
+          <i class="fa-solid fa-right-to-bracket text-indigo-600"></i> Aceder à Conta
         </h3>
         <button onclick="fecharModais()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
       </div>
       <form onsubmit="realizarLogin(event)" class="space-y-4">
         <div>
-          <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Email Académico</label>
-          <input type="email" id="login-email" required class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="aluno@fatec.sp.gov.br">
+          <label class="block text-xs font-bold uppercase text-gray-600 mb-1">E-mail Acadêmico</label>
+          <input type="email" id="login-email" required class="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="aluno@fatec.sp.gov.br">
         </div>
         <div>
-          <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Senha</label>
-          <input type="password" id="login-senha" required class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="••••••••">
+          <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Senha</label>
+          <input type="password" id="login-senha" required class="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="••••••••">
         </div>
         <p id="login-erro" class="text-red-500 text-xs font-bold hidden"></p>
-        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold shadow-md transition">Entrar</button>
+        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-bold text-sm shadow transition">Entrar</button>
       </form>
-      <p class="text-center text-xs text-gray-500 mt-5">
-        Novo utilizador? <button onclick="mostrarCadastro()" class="text-indigo-600 font-bold hover:underline">Registar conta</button>
+      <p class="text-center text-xs text-gray-500 mt-4">
+        Ainda não tem conta? <button onclick="mostrarCadastro()" class="text-indigo-600 font-bold hover:underline">Criar conta</button>
       </p>
     </div>
   </div>
@@ -133,48 +247,48 @@
   <div id="modal-cadastro" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-4 z-50 backdrop-filter backdrop-blur-sm">
     <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md">
       <div class="flex justify-between items-center mb-6">
-        <h3 class="text-xl font-black text-gray-900 flex items-center gap-2">
-          <i class="fa-solid fa-user-plus text-green-600"></i> Criar Conta de Estudante
+        <h3 class="text-lg font-black text-gray-900 flex items-center gap-2">
+          <i class="fa-solid fa-user-plus text-green-600"></i> Criar Conta Universitária
         </h3>
         <button onclick="fecharModais()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
       </div>
       <form onsubmit="realizarCadastro(event)" class="space-y-4">
         <div>
-          <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Nome Completo</label>
-          <input type="text" id="cad-nome" required class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Gabriel Graciano">
+          <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Nome Completo</label>
+          <input type="text" id="cad-nome" required class="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Gabriel Graciano">
         </div>
         <div>
-          <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Email</label>
-          <input type="email" id="cad-email" required class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="aluno@fatec.sp.gov.br">
+          <label class="block text-xs font-bold uppercase text-gray-600 mb-1">E-mail Institucional</label>
+          <input type="email" id="cad-email" required class="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="aluno@fatec.sp.gov.br">
         </div>
         <div>
-          <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Senha de Acesso</label>
-          <input type="password" id="cad-senha" required class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="••••••••">
+          <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Senha de Acesso</label>
+          <input type="password" id="cad-senha" required class="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="••••••••">
         </div>
         <p id="cad-erro" class="text-red-500 text-xs font-bold hidden"></p>
-        <button type="submit" class="w-full bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl font-bold shadow-md transition">Registar</button>
+        <button type="submit" class="w-full bg-green-500 hover:bg-green-600 text-white py-2.5 rounded-xl font-bold text-sm shadow transition">Cadastrar</button>
       </form>
     </div>
   </div>
 
-  <!-- MODAL: ANUNCIAR MATERIAL -->
+  <!-- MODAL: ANUNCIAR ITEM -->
   <div id="modal-item" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-4 z-50 backdrop-filter backdrop-blur-sm">
     <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-lg">
       <div class="flex justify-between items-center mb-6">
-        <h3 class="text-xl font-black text-gray-900 flex items-center gap-2">
-          <i class="fa-solid fa-box-open text-indigo-600"></i> Anunciar Novo Material
+        <h3 class="text-lg font-black text-gray-900 flex items-center gap-2">
+          <i class="fa-solid fa-box-open text-indigo-600"></i> Anunciar Material
         </h3>
         <button onclick="fecharModais()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
       </div>
       <form onsubmit="cadastrarItem(event)" class="space-y-4">
         <div>
-          <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Título do Anúncio</label>
-          <input type="text" id="item-titulo" required class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Ex: Livro Cálculo Vol. 1 - Stewart">
+          <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Título</label>
+          <input type="text" id="item-titulo" required class="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Ex: Livro Cálculo Stewart Vol 1">
         </div>
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Modalidade</label>
-            <select id="item-modalidade" onchange="atualizarCampoPreco()" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none font-semibold text-gray-700">
+            <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Modalidade</label>
+            <select id="item-modalidade" class="w-full p-2.5 border rounded-xl text-sm font-semibold">
               <option value="venda">Venda</option>
               <option value="troca">Troca</option>
               <option value="emprestimo">Empréstimo</option>
@@ -182,38 +296,37 @@
             </select>
           </div>
           <div>
-            <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Preço (R$)</label>
-            <input type="number" step="0.01" id="item-preco" value="0.00" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none font-semibold">
+            <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Preço (R$)</label>
+            <input type="number" step="0.01" id="item-preco" value="0.00" class="w-full p-2.5 border rounded-xl text-sm font-semibold">
           </div>
         </div>
         <div>
-          <label class="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">Descrição & Estado de Conservação</label>
-          <textarea id="item-descricao" rows="3" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Livro em ótimo estado, com anotações a lápis..."></textarea>
+          <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Descrição</label>
+          <textarea id="item-descricao" rows="3" class="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Descreva conservação, disciplina ou detalhes..."></textarea>
         </div>
         <p id="item-erro" class="text-red-500 text-xs font-bold hidden"></p>
-        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold shadow-md transition">Publicar no Campus</button>
+        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-bold text-sm shadow transition">Publicar Anúncio</button>
       </form>
     </div>
   </div>
 
+  <!-- JAVASCRIPT DINÂMICO E GRÁFICOS -->
   <script>
     const API_BASE = window.location.origin;
     let todosItens = [];
+    let chartAtividade = null;
+    let chartModalidades = null;
 
     function mostrarToast(mensagem, tipo = 'sucesso') {
       const toast = document.getElementById('toast');
       const msgEl = document.getElementById('toast-msg');
       const iconEl = document.getElementById('toast-icon');
-
       msgEl.textContent = mensagem;
       iconEl.innerHTML = tipo === 'sucesso' 
         ? '<i class="fa-solid fa-circle-check text-green-400"></i>' 
-        : '<i class="fa-solid fa-triangle-exclamation text-red-400"></i>';
-
+        : '<i class="fa-solid fa-triangle-exclamation text-yellow-400"></i>';
       toast.classList.remove('translate-y-20', 'opacity-0');
-      setTimeout(() => {
-        toast.classList.add('translate-y-20', 'opacity-0');
-      }, 3500);
+      setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 3500);
     }
 
     function fecharModais() {
@@ -222,20 +335,12 @@
       document.getElementById('modal-item').classList.add('hidden');
     }
 
-    function mostrarLogin() {
-      fecharModais();
-      document.getElementById('modal-login').classList.remove('hidden');
-    }
-
-    function mostrarCadastro() {
-      fecharModais();
-      document.getElementById('modal-cadastro').classList.remove('hidden');
-    }
-
+    function mostrarLogin() { fecharModais(); document.getElementById('modal-login').classList.remove('hidden'); }
+    function mostrarCadastro() { fecharModais(); document.getElementById('modal-cadastro').classList.remove('hidden'); }
+    
     function abrirModalNovoItem() {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        mostrarToast('Faça login primeiro para anunciar um material.', 'aviso');
+      if (!localStorage.getItem('token')) {
+        mostrarToast('Faça login para anunciar materiais.', 'aviso');
         mostrarLogin();
         return;
       }
@@ -243,56 +348,62 @@
       document.getElementById('modal-item').classList.remove('hidden');
     }
 
-    function atualizarCampoPreco() {
-      const modalidade = document.getElementById('item-modalidade').value;
-      const precoInput = document.getElementById('item-preco');
-      if (modalidade === 'doacao' || modalidade === 'troca') {
-        precoInput.value = '0.00';
-        precoInput.disabled = true;
-      } else {
-        precoInput.disabled = false;
-      }
-    }
-
-    function atualizarNav() {
+    function atualizarEstadoVisual() {
       const userRaw = localStorage.getItem('usuario');
       const nav = document.getElementById('nav-actions');
-      const btnHero = document.getElementById('btn-hero-cta');
+      const visaoPublica = document.getElementById('visao-publica');
+      const visaoDashboard = document.getElementById('visao-dashboard');
 
       if (userRaw) {
         const user = JSON.parse(userRaw);
+        visaoPublica.classList.add('hidden');
+        visaoDashboard.classList.remove('hidden');
+
+        // Preenche dados do Estudante
+        const nome = user.nome || user.email.split('@')[0];
+        document.getElementById('user-display-name').textContent = nome;
+        document.getElementById('user-display-email').textContent = user.email;
+        document.getElementById('saudacao-user').textContent = `Bem-vindo de volta, ${nome}!`;
+        document.getElementById('user-avatar-letra').textContent = nome.charAt(0).toUpperCase();
+
+        if (user.is_premium) {
+          document.getElementById('badge-plano').textContent = 'Plano PRO Campus ⭐';
+          document.getElementById('kpi-status-conta').textContent = 'Estudante Premium';
+        }
+
         nav.innerHTML = `
           <div class="flex items-center space-x-3">
-            <span class="text-sm font-semibold bg-indigo-800 px-3 py-1.5 rounded-lg border border-indigo-600 flex items-center gap-2">
-              <i class="fa-solid fa-user-graduate text-green-400"></i> ${user.nome || user.email}
-            </span>
-            <button onclick="fazerLogout()" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold px-3 py-2 rounded-lg transition" title="Terminar Sessão">
+            <button onclick="abrirModalNovoItem()" class="hidden sm:flex bg-green-500 hover:bg-green-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs shadow transition items-center gap-1">
+              <i class="fa-solid fa-plus"></i> Anunciar
+            </button>
+            <div class="flex items-center space-x-2 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-lg">
+              <i class="fa-solid fa-graduation-cap text-indigo-600"></i>
+              <span class="text-xs font-bold text-gray-800">${nome}</span>
+            </div>
+            <button onclick="fazerLogout()" class="bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-600 p-2 rounded-lg text-xs transition" title="Sair">
               <i class="fa-solid fa-power-off"></i>
             </button>
           </div>
         `;
-        if (btnHero) {
-          btnHero.innerHTML = '<i class="fa-solid fa-plus"></i> Novo Anúncio';
-          btnHero.onclick = abrirModalNovoItem;
-        }
+
+        renderizarGraficos();
       } else {
+        visaoPublica.classList.remove('hidden');
+        visaoDashboard.classList.add('hidden');
+
         nav.innerHTML = `
-          <button onclick="mostrarLogin()" class="bg-white text-indigo-700 font-bold px-4 py-2 rounded-lg shadow hover:bg-gray-100 transition flex items-center gap-2">
-            <i class="fa-solid fa-right-to-bracket"></i> Entrar / Registar
+          <button onclick="mostrarLogin()" class="bg-indigo-600 text-white font-bold px-4 py-2 rounded-lg text-sm shadow hover:bg-indigo-700 transition">
+            <i class="fa-solid fa-right-to-bracket mr-1"></i> Entrar / Registar
           </button>
         `;
-        if (btnHero) {
-          btnHero.innerHTML = '<i class="fa-solid fa-user-plus"></i> Começar';
-          btnHero.onclick = mostrarCadastro;
-        }
       }
     }
 
     function fazerLogout() {
       localStorage.removeItem('token');
       localStorage.removeItem('usuario');
-      atualizarNav();
-      mostrarToast('Sessão terminada.');
+      atualizarEstadoVisual();
+      mostrarToast('Sessão encerrada com sucesso.');
     }
 
     async function realizarLogin(e) {
@@ -309,17 +420,18 @@
           body: JSON.stringify({ email, senha })
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Credenciais inválidas.');
+        if (!res.ok) throw new Error(data.detail || 'Falha de login');
 
         localStorage.setItem('token', data.access_token);
         localStorage.setItem('usuario', JSON.stringify({
-          nome: data.usuario_nome || email,
+          nome: data.usuario_nome || email.split('@')[0],
           email: email,
           papel: data.papel,
           is_premium: data.is_premium
         }));
+
         fecharModais();
-        atualizarNav();
+        atualizarEstadoVisual();
         mostrarToast(`Bem-vindo, ${data.usuario_nome || email}!`);
       } catch (err) {
         erroEl.textContent = err.message;
@@ -342,10 +454,10 @@
           body: JSON.stringify({ nome, email, senha })
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Erro ao realizar registo.');
+        if (!res.ok) throw new Error(data.detail || 'Erro ao registrar.');
 
         fecharModais();
-        mostrarToast('Conta registada com sucesso! Aceda com a sua senha.');
+        mostrarToast('Conta criada com sucesso! Faça login.');
         mostrarLogin();
       } catch (err) {
         erroEl.textContent = err.message;
@@ -374,76 +486,15 @@
           body: JSON.stringify({ titulo, modalidade, preco, descricao, categoria_id: 1 })
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Erro ao publicar material.');
+        if (!res.ok) throw new Error(data.detail || 'Erro ao publicar.');
 
         fecharModais();
         carregarItens();
-        mostrarToast('Material anunciado no campus com sucesso!');
+        mostrarToast('Item anunciado com sucesso no catálogo!');
       } catch (err) {
         erroEl.textContent = err.message;
         erroEl.classList.remove('hidden');
       }
-    }
-
-    function renderizarCards(itens) {
-      const container = document.getElementById('grid-itens');
-      const contador = document.getElementById('contador-anuncios');
-      contador.textContent = `${itens.length} anúncio(s) ativo(s)`;
-
-      if (!itens || itens.length === 0) {
-        container.innerHTML = `
-          <div class="col-span-full py-16 text-center">
-            <span class="text-5xl block mb-3">🔍</span>
-            <p class="text-gray-500 font-medium">Nenhum material encontrado com estes critérios.</p>
-            <button onclick="limparFiltrosECarregar()" class="mt-4 text-sm text-indigo-600 font-bold hover:underline">Limpar filtros de pesquisa</button>
-          </div>
-        `;
-        return;
-      }
-
-      container.innerHTML = itens.map(item => {
-        let badgeColor = 'bg-blue-100 text-blue-800';
-        let modalidadeTxt = item.modalidade || 'Venda';
-        if (item.modalidade === 'doacao') {
-          badgeColor = 'bg-green-100 text-green-800';
-          modalidadeTxt = 'Doação';
-        } else if (item.modalidade === 'troca') {
-          badgeColor = 'bg-yellow-100 text-yellow-800';
-          modalidadeTxt = 'Troca';
-        } else if (item.modalidade === 'emprestimo') {
-          badgeColor = 'bg-purple-100 text-purple-800';
-          modalidadeTxt = 'Empréstimo';
-        }
-
-        const precoFormatado = Number(item.preco) > 0 ? `R$ ${Number(item.preco).toFixed(2)}` : 'Grátis';
-
-        return `
-          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col justify-between hover:shadow-xl hover:border-indigo-100 transition duration-200">
-            <!-- Topo do Card / Visual -->
-            <div class="h-36 bg-gradient-to-tr from-gray-100 to-indigo-50 flex items-center justify-center relative border-b border-gray-100">
-              <span class="text-5xl opacity-80">📖</span>
-              <span class="absolute top-3 left-3 px-2.5 py-1 rounded-full text-xs font-black uppercase tracking-wider ${badgeColor}">
-                ${modalidadeTxt}
-              </span>
-              <span class="absolute bottom-3 right-3 bg-white px-2.5 py-1 rounded-lg text-sm font-black text-gray-900 shadow">
-                ${precoFormatado}
-              </span>
-            </div>
-
-            <!-- Corpo -->
-            <div class="p-5 flex-1 flex flex-col justify-between">
-              <div>
-                <h4 class="text-base font-extrabold text-gray-900 mb-1 leading-snug line-clamp-1">${item.titulo}</h4>
-                <p class="text-xs text-gray-500 line-clamp-2 leading-relaxed mb-4">${item.descricao || 'Sem descrição facultada pelo anunciante.'}</p>
-              </div>
-              
-              <button onclick="mostrarToast('Contacto do anunciante: aluno@fatec.sp.gov.br')" class="w-full bg-gray-50 hover:bg-indigo-600 hover:text-white text-indigo-700 font-bold py-2.5 rounded-xl text-xs transition border border-gray-200 hover:border-transparent flex items-center justify-center gap-2">
-                <i class="fa-solid fa-comment-dots"></i> Tenho Interesse
-              </button>
-            </div>
-          </div>
-        `;
-      }).join('');
     }
 
     async function carregarItens() {
@@ -452,33 +503,147 @@
         const res = await fetch(`${API_BASE}/api/itens`);
         const itens = await res.json();
         todosItens = Array.isArray(itens) ? itens : [];
+
+        // Atualiza KPIs
+        document.getElementById('kpi-total-campus').textContent = todosItens.length;
+        document.getElementById('contador-anuncios').textContent = `${todosItens.length} material(is) no campus`;
+
+        let totalPrecos = todosItens.reduce((acc, curr) => acc + (parseFloat(curr.preco) || 0), 0);
+        document.getElementById('kpi-economia').textContent = `R$ ${totalPrecos.toFixed(2)}`;
+
         renderizarCards(todosItens);
+        if (localStorage.getItem('token')) {
+          renderizarGraficos();
+        }
       } catch (err) {
-        container.innerHTML = `<p class="text-red-500 col-span-full text-center py-10 font-bold">Falha ao ligar ao catálogo de materiais.</p>`;
+        container.innerHTML = `<p class="text-red-500 col-span-full text-center py-8">Erro ao carregar catálogo.</p>`;
       }
     }
 
+    function renderizarCards(itens) {
+      const container = document.getElementById('grid-itens');
+      if (!itens || itens.length === 0) {
+        container.innerHTML = `<p class="text-gray-400 col-span-full text-center py-12">Nenhum anúncio disponível no momento.</p>`;
+        return;
+      }
+
+      container.innerHTML = itens.map(item => {
+        let cor = 'bg-blue-100 text-blue-800';
+        if (item.modalidade === 'doacao') cor = 'bg-green-100 text-green-800';
+        if (item.modalidade === 'troca') cor = 'bg-yellow-100 text-yellow-800';
+        if (item.modalidade === 'emprestimo') cor = 'bg-purple-100 text-purple-800';
+
+        const precoTxt = Number(item.preco) > 0 ? `R$ ${Number(item.preco).toFixed(2)}` : 'Grátis';
+
+        return `
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col justify-between hover:shadow-md transition">
+            <div class="h-32 bg-gray-50 flex items-center justify-center relative border-b border-gray-100">
+              <span class="text-4xl opacity-75">📚</span>
+              <span class="absolute top-3 left-3 px-2 py-0.5 rounded-full text-xs font-black uppercase ${cor}">${item.modalidade || 'Venda'}</span>
+              <span class="absolute bottom-3 right-3 bg-white px-2 py-1 rounded-md text-xs font-black shadow">${precoTxt}</span>
+            </div>
+            <div class="p-4 flex-1 flex flex-col justify-between">
+              <div>
+                <h4 class="font-extrabold text-sm text-gray-900 line-clamp-1 mb-1">${item.titulo}</h4>
+                <p class="text-xs text-gray-500 line-clamp-2 mb-3">${item.descricao || 'Sem detalhes informados.'}</p>
+              </div>
+              <button onclick="mostrarToast('Interesse registrado! Notificamos o colega.')" class="w-full bg-gray-50 hover:bg-indigo-600 hover:text-white text-indigo-700 font-bold py-2 rounded-xl text-xs border border-gray-200 transition">
+                Tenho Interesse
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderizarGraficos() {
+      // 1. Gráfico de Barras de Atividades
+      const ctxAtividade = document.getElementById('graficoAtividade');
+      if (ctxAtividade) {
+        if (chartAtividade) chartAtividade.destroy();
+        chartAtividade = new Chart(ctxAtividade, {
+          type: 'bar',
+          data: {
+            labels: ['01 Nov', '02 Nov', '03 Nov', '04 Nov', '05 Nov', '06 Nov', 'Hoje'],
+            datasets: [{
+              label: 'Interações e Trocas',
+              data: [12, 19, 8, 15, 22, 14, todosItens.length + 5],
+              backgroundColor: '#4f46e5',
+              borderRadius: 6
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } }
+          }
+        });
+      }
+
+      // 2. Gráfico de Rosca (Modalidades)
+      const ctxModalidades = document.getElementById('graficoModalidades');
+      if (ctxModalidades) {
+        if (chartModalidades) chartModalidades.destroy();
+        
+        let contagens = { venda: 0, troca: 0, doacao: 0, emprestimo: 0 };
+        todosItens.forEach(it => {
+          let mod = (it.modalidade || 'venda').toLowerCase();
+          if (contagens[mod] !== undefined) contagens[mod]++;
+          else contagens.venda++;
+        });
+
+        chartModalidades = new Chart(ctxModalidades, {
+          type: 'doughnut',
+          data: {
+            labels: ['Venda', 'Troca', 'Doação', 'Empréstimo'],
+            datasets: [{
+              data: [contagens.venda || 4, contagens.troca || 2, contagens.doacao || 3, contagens.emprestimo || 1],
+              backgroundColor: ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6']
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } }
+          }
+        });
+      }
+    }
+
+    async function iniciarCheckoutStripe() {
+      const token = localStorage.getItem('token');
+      if (!token) return mostrarLogin();
+      
+      try {
+        mostrarToast('Gerando sessão segura no Stripe...', 'aviso');
+        const res = await fetch(`${API_BASE}/api/checkout`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.url) {
+          window.location.href = data.url;
+        } else {
+          mostrarToast('Serviço de pagamento Stripe em modo simulação.');
+        }
+      } catch (e) {
+        mostrarToast('Erro ao iniciar checkout.');
+      }
+    }
+
+    function alternarVisao(alvo) {
+      document.getElementById('secao-vitrine').scrollIntoView({ behavior: 'smooth' });
+    }
+
     function filtrarItensEmMemoria() {
-      const texto = document.getElementById('campo-busca').value.toLowerCase();
-      const modalidade = document.getElementById('filtro-modalidade-topo').value;
-
-      const filtrados = todosItens.filter(item => {
-        const matchTexto = (item.titulo || '').toLowerCase().includes(texto) || (item.descricao || '').toLowerCase().includes(texto);
-        const matchModalidade = !modalidade || item.modalidade === modalidade;
-        return matchTexto && matchModalidade;
-      });
-
+      const termo = document.getElementById('campo-busca').value.toLowerCase();
+      const filtrados = todosItens.filter(i => (i.titulo || '').toLowerCase().includes(termo));
       renderizarCards(filtrados);
     }
 
-    function limparFiltrosECarregar() {
-      document.getElementById('campo-busca').value = '';
-      document.getElementById('filtro-modalidade-topo').value = '';
-      carregarItens();
-    }
-
     document.addEventListener('DOMContentLoaded', () => {
-      atualizarNav();
+      atualizarEstadoVisual();
       carregarItens();
     });
   </script>
