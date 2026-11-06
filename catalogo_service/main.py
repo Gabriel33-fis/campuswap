@@ -10,15 +10,14 @@ from fastapi.responses import FileResponse
 from schemas import ItemCreate, ItemUpdate, ItemResponse
 from auth_guard import get_current_user
 from database import get_db_connection
-from storage import upload_imagem_item
 
-# 1. Instanciação obrigatória da aplicação
+# 1. Instância do FastAPI
 app = FastAPI(title="CampuSwap - Catálogo de Materiais")
 
-# 2. Configurações de ambiente
+# 2. Configurações de serviços
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth_service:5000")
 
-# 3. Rotas de Infraestrutura e Frontend
+# 3. Rotas essenciais
 @app.get("/health")
 def health():
     return {"status": "healthy"}
@@ -30,22 +29,19 @@ def home():
         return FileResponse(index_path)
     return {"status": "CampuSwap API online", "docs": "/docs"}
 
-# 4. Proxies para autenticação
-@app.post("/api/usuarios")
+# 4. Proxy de Autenticação
 @app.post("/api/register")
+@app.post("/api/usuarios")
 async def proxy_register(request: Request):
     body = await request.json()
     async with httpx.AsyncClient() as client:
         try:
             res = await client.post(f"{AUTH_SERVICE_URL}/register", json=body, timeout=10.0)
-            if res.status_code == 404:
-                res = await client.post(f"{AUTH_SERVICE_URL}/usuarios", json=body, timeout=10.0)
             return Response(content=res.content, status_code=res.status_code, media_type="application/json")
         except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Erro ao comunicar com auth_service: {str(e)}")
+            raise HTTPException(status_code=502, detail=f"Erro ao conectar ao auth_service: {str(e)}")
 
 @app.post("/api/login")
-@app.post("/api/auth/login")
 async def proxy_login(request: Request):
     body = await request.json()
     async with httpx.AsyncClient() as client:
@@ -53,8 +49,9 @@ async def proxy_login(request: Request):
             res = await client.post(f"{AUTH_SERVICE_URL}/login", json=body, timeout=10.0)
             return Response(content=res.content, status_code=res.status_code, media_type="application/json")
         except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Erro ao comunicar com auth_service: {str(e)}")
+            raise HTTPException(status_code=502, detail=f"Erro ao conectar ao auth_service: {str(e)}")
 
+# (Mantenha os endpoints existentes de listar_itens, obter_item, etc. abaixo)
 app = FastAPI(
     title="CampuSwap API",
     description="API do Marketplace Académico do Campus",

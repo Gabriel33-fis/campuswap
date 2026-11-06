@@ -1,37 +1,86 @@
 import os
+import sqlite3
 import pymysql
 from urllib.parse import urlparse
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////app/catalogo.db")
+
+class SQLiteRowDictCursor:
+    """Emulador de cursor compatível com cursor(dictionary=True) do PyMySQL."""
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def execute(self, sql, params=None):
+        # Converte placeholders %s do MySQL para ? do SQLite se estiver usando SQLite
+        if params is not None:
+            sql = sql.replace("%s", "?")
+            return self.cursor.execute(sql, params)
+        return self.cursor.execute(sql)
+
+    def fetchall(self):
+        rows = self.cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    def fetchone(self):
+        row = self.cursor.fetchone()
+        return dict(row) if row else None
+
+    def close(self):
+        self.cursor.close()
+
+class SQLiteConnectionWrapper:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def cursor(self, dictionary=True):
+        return SQLiteRowDictCursor(self.conn.cursor())
+
+    def commit(self):
+        self.conn.commit()
+
+    def close(self):
+        self.conn.close()
 
 def get_db_connection():
-    """Retorna uma conexão direta PyMySQL compatível com cursor(dictionary=True)."""
-    if DATABASE_URL and DATABASE_URL.startswith("mysql"):
-        # Trata formato mysql://user:pass@host:port/dbname ou mysql+pymysql://...
+    # Se for MySQL
+    if DATABASE_URL.startswith("mysql"):
         clean_url = DATABASE_URL.replace("mysql+pymysql://", "mysql://")
         parsed = urlparse(clean_url)
         return pymysql.connect(
-            host=parsed.hostname or "mariadb",
-            port=parsed.port or 3306,
-            user=parsed.username or "root",
-            password=parsed.password or "",
-            database=parsed.path.lstrip("/"),
+            host=parsed.hostname or os.getenv("DB_HOST", "localhost"),
+            port=parsed.port or int(os.getenv("DB_PORT", 3306)),
+            user=parsed.username or os.getenv("DB_USER", "root"),
+            password=parsed.password or os.getenv("DB_PASSWORD", ""),
+            database=parsed.path.lstrip("/") or os.getenv("DB_NAME", "campuswap_db"),
             autocommit=True,
             charset="utf8mb4"
         )
-    else:
-        # Fallback para variáveis individuais de ambiente
-        return pymysql.connect(
-            host=os.getenv("DB_HOST", "mariadb"),
-            port=int(os.getenv("DB_PORT", "3306")),
-            user=os.getenv("DB_USER", "root"),
-            password=os.getenv("DB_PASSWORD", "rootpassword"),
-            database=os.getenv("DB_NAME", "campuswap_db"),
-            autocommit=True,
-            charset="utf8mb4"
+    
+    # Se for SQLite (padrão configurado no docker-compose)
+    db_path = DATABASE_URL.replace("sqlite:////", "/").replace("sqlite:///", "")
+    os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    
+    # Garante que a tabela itens_marketplace exista
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS itens_marketplace (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo TEXT NOT NULL,
+            descricao TEXT,
+            preco REAL DEFAULT 0.0,
+            modalidade TEXT DEFAULT 'venda',
+            status TEXT DEFAULT 'disponivel',
+            categoria_id INTEGER DEFAULT 1,
+            usuario_id INTEGER DEFAULT 1,
+            imagem_url TEXT,
+            criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+    """)
+    conn.commit()
+    return SQLiteConnectionWrapper(conn)
 
-# Mantém get_db por compatibilidade caso alguma rota use Depends(get_db)
 def get_db():
     conn = get_db_connection()
     try:
