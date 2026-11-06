@@ -17,6 +17,35 @@ app = FastAPI(title="CampuSwap - Catálogo de Materiais")
 # 2. Configurações de serviços
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth_service:5000")
 
+# Logo após a linha: app = FastAPI(...)
+
+def migrar_banco():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Cria a coluna 'condicao' caso não exista no SQLite
+        try:
+            cursor.execute("ALTER TABLE itens_marketplace ADD COLUMN condicao VARCHAR(50) DEFAULT 'semi-novo'")
+            conn.commit()
+        except Exception:
+            pass  # Coluna já existe
+
+        # Cria a coluna 'imagem_url' caso não exista no SQLite
+        try:
+            cursor.execute("ALTER TABLE itens_marketplace ADD COLUMN imagem_url VARCHAR(500) NULL")
+            conn.commit()
+        except Exception:
+            pass  # Coluna já existe
+
+        conn.close()
+    except Exception as e:
+        print(f"Erro na migração do banco: {e}")
+
+@app.on_event("startup")
+def startup_event():
+    migrar_banco()
+
 # 3. Rotas essenciais
 @app.get("/health")
 def health():
