@@ -445,15 +445,22 @@ async function cadastrarItem(e) {
   const erroEl = document.getElementById('item-erro');
   erroEl.classList.add('hidden');
 
+  if (!token) {
+    erroEl.textContent = 'Sessão expirada. Faça login novamente.';
+    erroEl.classList.remove('hidden');
+    return;
+  }
+
   const titulo = document.getElementById('item-titulo').value.trim();
   const modalidade = document.getElementById('item-modalidade').value;
-  const preco = parseFloat(document.getElementById('item-preco').value) || 0.0;
+  // Converte vírgula para ponto se o usuário digitar "100,00"
+  const precoRaw = document.getElementById('item-preco').value.replace(',', '.');
+  const preco = parseFloat(precoRaw) || 0.0;
   const descricao = document.getElementById('item-descricao').value.trim();
 
-  // Payload completo esperado por ItemCreate
   const payload = {
     titulo: titulo,
-    descricao: descricao,
+    descricao: descricao || "Sem descrição informada",
     preco: preco,
     modalidade: modalidade,
     status: "disponivel",
@@ -469,12 +476,18 @@ async function cadastrarItem(e) {
       },
       body: JSON.stringify(payload)
     });
-    
+
     const data = await res.json();
     if (!res.ok) {
-      // Se houver erro de validação (422), detalha qual campo falhou
-      const msg = data.detail ? (Array.isArray(data.detail) ? data.detail.map(d => `${d.loc.slice(-1)}: ${d.msg}`).join(', ') : data.detail) : 'Erro ao cadastrar material.';
-      throw new Error(msg);
+      let detalhe = 'Erro ao cadastrar material.';
+      if (Array.isArray(data.detail)) {
+        detalhe = data.detail.map(d => `${d.loc.slice(-1)}: ${d.msg}`).join(' | ');
+      } else if (typeof data.detail === 'string') {
+        detalhe = data.detail;
+      } else if (typeof data.detail === 'object') {
+        detalhe = JSON.stringify(data.detail);
+      }
+      throw new Error(detalhe);
     }
 
     fecharModais();
@@ -485,39 +498,6 @@ async function cadastrarItem(e) {
     erroEl.classList.remove('hidden');
   }
 }
-
-    async function cadastrarItem(e) {
-      e.preventDefault();
-      const token = localStorage.getItem('token');
-      const erroEl = document.getElementById('item-erro');
-      erroEl.classList.add('hidden');
-
-      const titulo = document.getElementById('item-titulo').value;
-      const modalidade = document.getElementById('item-modalidade').value;
-      const preco = parseFloat(document.getElementById('item-preco').value) || 0.0;
-      const descricao = document.getElementById('item-descricao').value;
-
-      try {
-        const res = await fetch(`${API_BASE}/api/itens`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ titulo, modalidade, preco, descricao, categoria_id: 1 })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Erro ao publicar.');
-
-        fecharModais();
-        carregarItens();
-        mostrarToast('Item anunciado com sucesso no catálogo!');
-      } catch (err) {
-        erroEl.textContent = err.message;
-        erroEl.classList.remove('hidden');
-      }
-    }
-
     async function carregarItens() {
       const container = document.getElementById('grid-itens');
       try {
