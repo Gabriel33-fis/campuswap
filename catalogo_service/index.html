@@ -204,8 +204,13 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Falha na autenticação.');
 
-        localStorage.setItem('token', data.access_token || data.token);
-        localStorage.setItem('usuario', JSON.stringify(data.usuario || { email }));
+        localStorage.setItem('token', data.access_token);
+        localStorage.setItem('usuario', JSON.stringify({
+          nome: data.usuario_nome || email,
+          email: email,
+          papel: data.papel,
+          is_premium: data.is_premium
+        }));
         fecharModais();
         atualizarNav();
       } catch (err) {
@@ -223,7 +228,7 @@
       const senha = document.getElementById('cad-senha').value;
 
       try {
-        const res = await fetch(`${API_BASE}/api/usuarios`, {
+        const res = await fetch(`${API_BASE}/api/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ nome, email, senha })
