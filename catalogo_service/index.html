@@ -348,43 +348,54 @@
   </div>
 
   <!-- MODAL: ANUNCIAR ITEM -->
-  <div id="modal-item" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-4 z-50 backdrop-filter backdrop-blur-sm">
-    <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-lg">
-      <div class="flex justify-between items-center mb-6">
-        <h3 class="text-lg font-black text-gray-900 flex items-center gap-2">
-          <i class="fa-solid fa-box-open text-indigo-600"></i> Anunciar Material
-        </h3>
-        <button onclick="fecharModais()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
-      </div>
-      <form onsubmit="cadastrarItem(event)" class="space-y-4">
-        <div>
-          <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Título</label>
-          <input type="text" id="item-titulo" required class="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Ex: Calculadora Casio fx-991 lacw">
-        </div>
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Modalidade</label>
-            <select id="item-modalidade" class="w-full p-2.5 border rounded-xl text-sm font-semibold">
-              <option value="venda">Venda</option>
-              <option value="troca">Troca</option>
-              <option value="emprestimo">Empréstimo</option>
-              <option value="doacao">Doação (Grátis)</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Preço (R$)</label>
-            <input type="text" id="item-preco" value="0.00" class="w-full p-2.5 border rounded-xl text-sm font-semibold">
-          </div>
-        </div>
-        <div>
-          <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Descrição</label>
-          <textarea id="item-descricao" rows="3" class="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Descreva conservação, curso ou detalhes..."></textarea>
-        </div>
-        <p id="item-erro" class="text-red-500 text-xs font-bold hidden"></p>
-        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-bold text-sm shadow transition">Publicar Anúncio</button>
-      </form>
+<div id="modal-item" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-4 z-50 backdrop-filter backdrop-blur-sm">
+  <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-lg">
+    <div class="flex justify-between items-center mb-6">
+      <h3 class="text-lg font-black text-gray-900 flex items-center gap-2">
+        <i class="fa-solid fa-box-open text-indigo-600"></i> Anunciar Material
+      </h3>
+      <button onclick="fecharModais()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
     </div>
+    <form onsubmit="cadastrarItem(event)" class="space-y-4">
+      <div>
+        <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Título</label>
+        <input type="text" id="item-titulo" required class="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Ex: Calculadora Casio fx-991 lacw">
+      </div>
+      
+      <div class="grid grid-cols-3 gap-3">
+        <div>
+          <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Modalidade</label>
+          <select id="item-modalidade" class="w-full p-2.5 border rounded-xl text-sm font-semibold">
+            <option value="venda">Venda</option>
+            <option value="troca">Troca</option>
+            <option value="emprestimo">Empréstimo</option>
+            <option value="doacao">Doação</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Condição</label>
+          <select id="item-condicao" class="w-full p-2.5 border rounded-xl text-sm font-semibold">
+            <option value="novo">Novo</option>
+            <option value="semi-novo" selected>Semi-novo</option>
+            <option value="usado">Usado</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Preço (R$)</label>
+          <input type="text" id="item-preco" value="0.00" class="w-full p-2.5 border rounded-xl text-sm font-semibold">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Descrição</label>
+        <textarea id="item-descricao" rows="3" class="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Descreva conservação, curso ou detalhes..."></textarea>
+      </div>
+      
+      <p id="item-erro" class="text-red-500 text-xs font-bold hidden"></p>
+      <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-bold text-sm shadow transition">Publicar Anúncio</button>
+    </form>
   </div>
+</div>
 
   <!-- JAVASCRIPT: CONTROLE DE ABAS, MINIO E DADOS -->
   <script>
@@ -646,6 +657,8 @@
 
       const titulo = document.getElementById('item-titulo').value.trim();
       const modalidade = document.getElementById('item-modalidade').value;
+      const condicaoEl = document.getElementById('item-condicao');
+      const condicao = condicaoEl ? condicaoEl.value : "semi-novo";
       const precoRaw = document.getElementById('item-preco').value.replace(',', '.');
       const preco = parseFloat(precoRaw) || 0.0;
       const descricao = document.getElementById('item-descricao').value.trim();
@@ -655,6 +668,7 @@
         descricao: descricao || "Sem detalhes informados",
         preco: preco,
         modalidade: modalidade,
+        condicao: condicao,
         status: "disponivel",
         categoria_id: 1
       };
