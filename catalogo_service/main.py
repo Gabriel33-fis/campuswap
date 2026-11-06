@@ -52,11 +52,7 @@ async def proxy_login(request: Request):
             raise HTTPException(status_code=502, detail=f"Erro ao conectar ao auth_service: {str(e)}")
 
 # (Mantenha os endpoints existentes de listar_itens, obter_item, etc. abaixo)
-app = FastAPI(
-    title="CampuSwap API",
-    description="API do Marketplace Académico do Campus",
-    version="1.0.0"
-)
+
 
 @app.get("/health")
 def health():
