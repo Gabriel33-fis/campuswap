@@ -347,7 +347,7 @@
     </div>
   </div>
 
-  <!-- MODAL: ANUNCIAR ITEM -->
+ <!-- MODAL: ANUNCIAR ITEM -->
 <div id="modal-item" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-4 z-50 backdrop-filter backdrop-blur-sm">
   <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-lg">
     <div class="flex justify-between items-center mb-6">
@@ -386,6 +386,22 @@
         </div>
       </div>
 
+      <!-- Upload de Foto do Material (MinIO) -->
+      <div>
+        <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Foto do Material</label>
+        <div class="flex items-center gap-3">
+          <label class="cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-xl text-xs font-bold border border-gray-300 transition flex items-center gap-2">
+            <i class="fa-solid fa-camera text-indigo-600"></i>
+            <span>Escolher Imagem</span>
+            <input type="file" id="item-foto" accept="image/*" onchange="previsualizarFotoItem(event)" class="hidden">
+          </label>
+          <span id="nome-arquivo-foto" class="text-xs text-gray-500 truncate max-w-xs">Nenhum arquivo selecionado</span>
+        </div>
+        <div id="preview-foto-container" class="mt-2 hidden">
+          <img id="preview-foto-img" src="" alt="Prévia" class="h-20 w-20 object-cover rounded-xl border border-gray-200 shadow-sm">
+        </div>
+      </div>
+
       <div>
         <label class="block text-xs font-bold uppercase text-gray-600 mb-1">Descrição</label>
         <textarea id="item-descricao" rows="3" class="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="Descreva conservação, curso ou detalhes..."></textarea>
@@ -404,6 +420,7 @@
     let chartAtividade = null;
     let chartModalidades = null;
     let filtroAtualVitrine = 'todos';
+    let arquivoFotoItem = null;
 
     function mostrarToast(mensagem, tipo = 'sucesso') {
       const toast = document.getElementById('toast');
@@ -649,19 +666,63 @@
       }
     }
 
-    async function cadastrarItem(e) {
-      e.preventDefault();
-      const token = localStorage.getItem('token');
-      const erroEl = document.getElementById('item-erro');
-      erroEl.classList.add('hidden');
+  function previsualizarFotoItem(event) {
+    const file = event.target.files[0];
+    if (!file) return;
 
-      const titulo = document.getElementById('item-titulo').value.trim();
-      const modalidade = document.getElementById('item-modalidade').value;
-      const condicaoEl = document.getElementById('item-condicao');
-      const condicao = condicaoEl ? condicaoEl.value : "semi-novo";
-      const precoRaw = document.getElementById('item-preco').value.replace(',', '.');
-      const preco = parseFloat(precoRaw) || 0.0;
-      const descricao = document.getElementById('item-descricao').value.trim();
+    arquivoFotoItem = file;
+    document.getElementById('nome-arquivo-foto').textContent = file.name;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      document.getElementById('preview-foto-img').src = e.target.result;
+      document.getElementById('preview-foto-container').classList.remove('hidden');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function cadastrarItem(e) {
+    e.preventDefault();
+    const token = localStorage.getItem('token');
+    const erroEl = document.getElementById('item-erro');
+    erroEl.classList.add('hidden');
+
+    if (!token) {
+      erroEl.textContent = 'Sessão expirada. Faça login novamente.';
+      erroEl.classList.remove('hidden');
+      return;
+    }
+
+    const titulo = document.getElementById('item-titulo').value.trim();
+    const modalidade = document.getElementById('item-modalidade').value;
+    const condicaoEl = document.getElementById('item-condicao');
+    const condicao = (condicaoEl && condicaoEl.value) ? condicaoEl.value : "semi-novo";
+    const precoRaw = document.getElementById('item-preco').value.replace(',', '.');
+    const preco = parseFloat(precoRaw) || 0.0;
+    const descricao = document.getElementById('item-descricao').value.trim();
+
+    let imagem_url = null;
+
+    try {
+      // Se o usuário selecionou imagem, envia para a rota de upload
+      if (arquivoFotoItem) {
+        const formData = new FormData();
+        formData.append('file', arquivoFotoItem);
+
+        try {
+          const resUpload = await fetch(`${API_BASE}/api/upload`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formData
+          });
+          if (resUpload.ok) {
+            const dataUpload = await resUpload.json();
+            imagem_url = dataUpload.url || dataUpload.imagem_url;
+          }
+        } catch (errUpload) {
+          console.warn('Upload de foto falhou, continuando sem foto:', errUpload);
+        }
+      }
 
       const payload = {
         titulo: titulo,
@@ -669,39 +730,45 @@
         preco: preco,
         modalidade: modalidade,
         condicao: condicao,
+        imagem_url: imagem_url,
         status: "disponivel",
         categoria_id: 1
       };
 
-      try {
-        const res = await fetch(`${API_BASE}/api/itens`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          let detalhe = 'Erro ao cadastrar material.';
-          if (Array.isArray(data.detail)) {
-            detalhe = data.detail.map(d => `${d.loc.slice(-1)}: ${d.msg}`).join(' | ');
-          } else if (typeof data.detail === 'string') {
-            detalhe = data.detail;
-          }
-          throw new Error(detalhe);
-        }
+      const res = await fetch(`${API_BASE}/api/itens`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
 
-        fecharModais();
-        carregarItens();
-        mudarAba('vitrine');
-        mostrarToast('Material anunciado com sucesso na vitrine!');
-      } catch (err) {
-        erroEl.textContent = err.message;
-        erroEl.classList.remove('hidden');
+      const data = await res.json();
+      if (!res.ok) {
+        let detalhe = 'Erro ao cadastrar material.';
+        if (Array.isArray(data.detail)) {
+          detalhe = data.detail.map(d => `${d.loc.slice(-1)}: ${d.msg}`).join(' | ');
+        } else if (typeof data.detail === 'string') {
+          detalhe = data.detail;
+        }
+        throw new Error(detalhe);
       }
+
+      // Limpa os estados do modal
+      arquivoFotoItem = null;
+      document.getElementById('nome-arquivo-foto').textContent = 'Nenhum arquivo selecionado';
+      document.getElementById('preview-foto-container').classList.add('hidden');
+
+      fecharModais();
+      carregarItens();
+      mudarAba('vitrine');
+      mostrarToast('Material anunciado com sucesso no campus!');
+    } catch (err) {
+      erroEl.textContent = err.message;
+      erroEl.classList.remove('hidden');
     }
+  }
 
     // ==========================================
     // CATÁLOGO & VITRINE DE MATERIAIS
