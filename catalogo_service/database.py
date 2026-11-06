@@ -10,6 +10,14 @@ class SQLiteRowDictCursor:
     def __init__(self, cursor):
         self.cursor = cursor
 
+    @property
+    def lastrowid(self):
+        return self.cursor.lastrowid
+
+    @property
+    def rowcount(self):
+        return self.cursor.rowcount
+
     def execute(self, sql, params=None):
         # Converte placeholders %s do MySQL para ? do SQLite se estiver usando SQLite
         if params is not None:
@@ -27,6 +35,10 @@ class SQLiteRowDictCursor:
 
     def close(self):
         self.cursor.close()
+
+    def __getattr__(self, name):
+        # Repassa qualquer outro método ou atributo não implementado para o cursor nativo
+        return getattr(self.cursor, name)
 
 class SQLiteConnectionWrapper:
     def __init__(self, conn):
@@ -62,7 +74,7 @@ def get_db_connection():
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     
-    # Garante que a tabela itens_marketplace exista
+    # Garante que a tabela itens_marketplace exista com todas as colunas
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS itens_marketplace (
@@ -70,6 +82,7 @@ def get_db_connection():
             titulo TEXT NOT NULL,
             descricao TEXT,
             preco REAL DEFAULT 0.0,
+            condicao TEXT DEFAULT 'semi-novo',
             modalidade TEXT DEFAULT 'venda',
             status TEXT DEFAULT 'disponivel',
             categoria_id INTEGER DEFAULT 1,
@@ -78,6 +91,18 @@ def get_db_connection():
             criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    
+    # Migra tabelas antigas existentes que ainda não tinham condicao ou imagem_url
+    try:
+        cursor.execute("ALTER TABLE itens_marketplace ADD COLUMN condicao TEXT DEFAULT 'semi-novo'")
+    except sqlite3.OperationalError:
+        pass  # Coluna condicao já existe
+
+    try:
+        cursor.execute("ALTER TABLE itens_marketplace ADD COLUMN imagem_url TEXT")
+    except sqlite3.OperationalError:
+        pass  # Coluna imagem_url já existe
+
     conn.commit()
     return SQLiteConnectionWrapper(conn)
 
