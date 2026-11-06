@@ -145,9 +145,17 @@ def listar_meus_itens(current_user: dict = Depends(get_current_user)):
     meus_itens = cursor.fetchall()
     conn.close()
     return meus_itens
-
 @app.post("/api/itens", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)
 def criar_item(item_in: ItemCreate, current_user: dict = Depends(get_current_user)):
+    # Obtém o id de forma segura contra variações no payload do JWT
+    user_id = current_user.get("usuario_id") or current_user.get("id") or current_user.get("sub")
+    
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Identificador de usuário não encontrado no token."
+        )
+
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     
@@ -157,7 +165,7 @@ def criar_item(item_in: ItemCreate, current_user: dict = Depends(get_current_use
         VALUES (%s, %s, %s, %s, %s, %s, %s, 'disponivel')
     """
     cursor.execute(query, (
-        current_user["id"],
+        user_id,
         item_in.categoria_id,
         item_in.titulo,
         item_in.descricao,
@@ -172,7 +180,7 @@ def criar_item(item_in: ItemCreate, current_user: dict = Depends(get_current_use
     novo_item = cursor.fetchone()
     conn.close()
     
-    emitir_evento_log("item_anunciado", current_user["id"], {"item_id": novo_id, "titulo": item_in.titulo})
+    emitir_evento_log("item_anunciado", user_id, {"item_id": novo_id, "titulo": item_in.titulo})
     return novo_item
 
 @app.put("/api/itens/{item_id}", response_model=ItemResponse)
