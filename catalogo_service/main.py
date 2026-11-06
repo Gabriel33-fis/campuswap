@@ -174,9 +174,9 @@ def listar_meus_itens(current_user: dict = Depends(get_current_user)):
     meus_itens = cursor.fetchall()
     conn.close()
     return meus_itens
+
 @app.post("/api/itens", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)
 def criar_item(item_in: ItemCreate, current_user: dict = Depends(get_current_user)):
-    # Obtém o id de forma segura contra variações no payload do JWT
     user_id = current_user.get("usuario_id") or current_user.get("id") or current_user.get("sub")
     
     if not user_id:
@@ -203,13 +203,27 @@ def criar_item(item_in: ItemCreate, current_user: dict = Depends(get_current_use
         item_in.preco
     ))
     conn.commit()
-    novo_id = cursor.lastrowid
+
+    # Obtém o ID inserido de forma segura e compatível com SQLite / custom wrapper
+    novo_id = None
+    if hasattr(cursor, 'lastrowid') and cursor.lastrowid:
+        novo_id = cursor.lastrowid
+    elif hasattr(cursor, 'cursor') and hasattr(cursor.cursor, 'lastrowid'):
+        novo_id = cursor.cursor.lastrowid
+    else:
+        cursor.execute("SELECT last_insert_rowid() AS id")
+        row = cursor.fetchone()
+        novo_id = row["id"] if isinstance(row, dict) else row[0]
     
     cursor.execute("SELECT * FROM itens_marketplace WHERE id = %s", (novo_id,))
     novo_item = cursor.fetchone()
     conn.close()
     
-    emitir_evento_log("item_anunciado", user_id, {"item_id": novo_id, "titulo": item_in.titulo})
+    try:
+        emitir_evento_log("item_anunciado", user_id, {"item_id": novo_id, "titulo": item_in.titulo})
+    except Exception as e:
+        print(f"Aviso: Falha ao emitir log de evento: {e}")
+
     return novo_item
 
 @app.put("/api/itens/{item_id}", response_model=ItemResponse)
