@@ -520,13 +520,6 @@
       const preco = parseFloat(document.getElementById('item-preco').value.replace(',', '.')) || 0;
       let imagem_url = null;
       try {
-        if (arquivoFotoItem) {
-          const fd = new FormData(); fd.append('file', arquivoFotoItem);
-          try {
-            const up = await fetch(`${API_BASE}/api/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd });
-            if (up.ok) { const d = await up.json(); imagem_url = d.url || d.imagem_url; }
-          } catch (errUp) { console.warn('Upload falhou, seguindo sem foto:', errUp); }
-        }
         const payload = {
           titulo: document.getElementById('item-titulo').value.trim(),
           descricao: document.getElementById('item-descricao').value.trim() || "Sem detalhes informados",
@@ -541,6 +534,13 @@
           if (Array.isArray(data.detail)) det = data.detail.map(d => `${d.loc.slice(-1)}: ${d.msg}`).join(' | ');
           else if (typeof data.detail === 'string') det = data.detail;
           throw new Error(det);
+        }
+        if (arquivoFotoItem && data.id) {
+          try {
+            const fd = new FormData(); fd.append('arquivo', arquivoFotoItem);
+            const up = await fetch(`${API_BASE}/api/itens/${data.id}/foto`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd });
+            if (!up.ok) mostrarToast('Anúncio criado, mas a foto não foi enviada.', 'aviso');
+          } catch (errFoto) { mostrarToast('Anúncio criado, mas a foto não foi enviada.', 'aviso'); }
         }
         arquivoFotoItem = null;
         document.getElementById('nome-arquivo-foto').textContent = 'Nenhum arquivo selecionado';

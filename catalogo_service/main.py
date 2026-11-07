@@ -6,7 +6,7 @@ import redis
 import httpx
 from pydantic import BaseModel
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from schemas import ItemCreate, ItemUpdate, ItemResponse
 from auth_guard import get_current_user
@@ -25,6 +25,7 @@ except ImportError:
             return usuario
         return dependencia
 from database import get_db_connection
+from storage import upload_imagem_item, baixar_imagem
 
 # 1. Instância do FastAPI
 app = FastAPI(title="CampuSwap - Catálogo de Materiais")
@@ -366,13 +367,32 @@ async def upload_foto_item(
         item = buscar_item(cursor, item_id)
         user_id = exigir_dono_ou_admin(item, current_user, "alterar", "tentativa_upload_nao_autorizada")
 
-        # ATENÇÃO: upload_imagem_item não está importada neste arquivo.
-        # Importe-a do módulo onde ela foi definida (ex.: from storage import upload_imagem_item).
         foto_key = await upload_imagem_item(arquivo, item_id)
-        cursor.execute("UPDATE itens_marketplace SET foto_key = %s WHERE id = %s", (foto_key, item_id))
+        # imagem_url aponta para a rota abaixo, que lê a foto do bucket (privado) no MinIO.
+        cursor.execute(
+            "UPDATE itens_marketplace SET foto_key = %s, imagem_url = %s WHERE id = %s",
+            (foto_key, f"/api/fotos/{foto_key}", item_id),
+        )
         conn.commit()
     finally:
         conn.close()
 
     emitir_evento_log("foto_item_enviada", user_id, {"item_id": item_id, "foto_key": foto_key})
-    return {"mensagem": "Foto enviada com sucesso", "foto_key": foto_key}
+    return {"mensagem": "Foto enviada com sucesso", "foto_key": foto_key, "imagem_url": f"/api/fotos/{foto_key}"}
+
+
+@app.get("/api/fotos/{chave:path}")
+def servir_foto(chave: str):
+    try:
+        obj = baixar_imagem(chave)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Foto não encontrada.")
+
+    def fluxo():
+        try:
+            yield from obj.stream(32 * 1024)
+        finally:
+            obj.close()
+            obj.release_conn()
+
+    return StreamingResponse(fluxo(), media_type=obj.headers.get("Content-Type", "application/octet-stream"))
