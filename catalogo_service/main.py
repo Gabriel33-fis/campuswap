@@ -1,629 +1,782 @@
-import os
-import json
-from typing import List, Literal, Optional
-
-import redis
-import httpx
-from pydantic import BaseModel, Field
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Request, Response
-from fastapi.responses import FileResponse, StreamingResponse
-
-from schemas import ItemCreate, ItemUpdate, ItemResponse
-from auth_guard import get_current_user
-
-# Se o seu auth_guard.py já define verificar_papeis, ele é usado. Caso contrário, esta versão entra no lugar.
-try:
-    from auth_guard import verificar_papeis
-except ImportError:
-    def verificar_papeis(papeis_permitidos: List[str]):
-        def dependencia(usuario: dict = Depends(get_current_user)):
-            if usuario.get("papel", "aluno") not in papeis_permitidos:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Acesso proibido: seu perfil não tem permissão para esta ação.",
-                )
-            return usuario
-        return dependencia
-from database import get_db_connection
-from storage import upload_imagem_item, baixar_imagem
-
-# 1. Instância do FastAPI
-app = FastAPI(title="CampuSwap - Catálogo de Materiais")
-
-# 2. Configurações de serviços
-AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth_service:5000")
-
-# Papéis que podem editar/remover anúncios de outros usuários.
-# Para permitir só administradores, use {"admin"}.
-PAPEIS_PRIVILEGIADOS = {"admin", "moderador"}
-PAPEIS_MODERACAO = ["moderador", "admin"]
-
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "")
-
-
-class ItemSaida(ItemResponse):
-    """Garante que imagem_url chegue ao front, mesmo que o schema original não a declare."""
-    imagem_url: Optional[str] = None
-
-
-# Campos que o PUT pode alterar (impede mudar usuario_id, id, criado_em etc.)
-CAMPOS_EDITAVEIS = {"titulo", "descricao", "condicao", "modalidade", "preco",
-                    "status", "categoria_id", "imagem_url"}
-
-
-# Tabelas do chat: (versão SQLite, versão MySQL)
-DDL_CHAT = [
-    ("""CREATE TABLE IF NOT EXISTS conversas (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL,
-        anunciante_id VARCHAR(64) NOT NULL, interessado_id VARCHAR(64) NOT NULL,
-        anunciante_nome VARCHAR(120), interessado_nome VARCHAR(120),
-        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE (item_id, interessado_id))""",
-     """CREATE TABLE IF NOT EXISTS conversas (
-        id INT AUTO_INCREMENT PRIMARY KEY, item_id INT NOT NULL,
-        anunciante_id VARCHAR(64) NOT NULL, interessado_id VARCHAR(64) NOT NULL,
-        anunciante_nome VARCHAR(120), interessado_nome VARCHAR(120),
-        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE (item_id, interessado_id))"""),
-    ("""CREATE TABLE IF NOT EXISTS mensagens (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, conversa_id INTEGER NOT NULL,
-        remetente_id VARCHAR(64) NOT NULL, texto TEXT NOT NULL, lida INTEGER DEFAULT 0,
-        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""",
-     """CREATE TABLE IF NOT EXISTS mensagens (
-        id INT AUTO_INCREMENT PRIMARY KEY, conversa_id INT NOT NULL,
-        remetente_id VARCHAR(64) NOT NULL, texto TEXT NOT NULL, lida INT DEFAULT 0,
-        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""),
-]
-
-
-def migrar_banco():
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        for ddl in (
-            "ALTER TABLE itens_marketplace ADD COLUMN condicao VARCHAR(50) DEFAULT 'semi-novo'",
-            "ALTER TABLE itens_marketplace ADD COLUMN imagem_url VARCHAR(500) NULL",
-            "ALTER TABLE itens_marketplace ADD COLUMN foto_key VARCHAR(500) NULL",
-            "ALTER TABLE itens_marketplace ADD COLUMN is_premium INTEGER DEFAULT 0",
-        ):
-            try:
-                cursor.execute(ddl)
-                conn.commit()
-            except Exception:
-                pass  # Coluna já existe
-        for ddl_sqlite, ddl_mysql in DDL_CHAT:
-            try:
-                cursor.execute(ddl_sqlite)
-                conn.commit()
-            except Exception:
-                try:
-                    cursor.execute(ddl_mysql)
-                    conn.commit()
-                except Exception as e:
-                    print(f"Erro ao criar tabela do chat: {e}")
-        conn.close()
-    except Exception as e:
-        print(f"Erro na migração do banco: {e}")
-
-
-@app.on_event("startup")
-def startup_event():
-    migrar_banco()
-
-
-# 3. Rotas essenciais
-@app.get("/health")
-def health():
-    return {"status": "healthy"}
-
-
-@app.get("/")
-def home():
-    index_path = os.path.join(os.path.dirname(__file__), "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    return {"status": "CampuSwap API online", "docs": "/docs"}
-
-
-# 4. Proxy de Autenticação
-@app.post("/api/register")
-@app.post("/api/usuarios")
-async def proxy_register(request: Request):
-    body = await request.json()
-    async with httpx.AsyncClient() as client:
-        try:
-            res = await client.post(f"{AUTH_SERVICE_URL}/register", json=body, timeout=10.0)
-            return Response(content=res.content, status_code=res.status_code, media_type="application/json")
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Erro ao conectar ao auth_service: {str(e)}")
-
-
-@app.post("/api/login")
-async def proxy_login(request: Request):
-    body = await request.json()
-    async with httpx.AsyncClient() as client:
-        try:
-            res = await client.post(f"{AUTH_SERVICE_URL}/login", json=body, timeout=10.0)
-            return Response(content=res.content, status_code=res.status_code, media_type="application/json")
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Erro ao conectar ao auth_service: {str(e)}")
-
-
-@app.post("/api/checkout")
-async def proxy_checkout(request: Request):
-    auth_header = request.headers.get("Authorization")
-    headers = {"Authorization": auth_header} if auth_header else {}
-    async with httpx.AsyncClient() as client:
-        try:
-            res = await client.post(f"{AUTH_SERVICE_URL}/checkout", headers=headers, timeout=15.0)
-            return Response(content=res.content, status_code=res.status_code, media_type="application/json")
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Erro ao conectar com auth_service: {str(e)}")
-
-
-# Conexão com o Redis para eventos de auditoria e negócio
-REDIS_HOST = os.getenv("REDIS_HOST", "redis")
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-
-
-def emitir_evento_log(acao: str, usuario_id, detalhes: dict):
-    payload = {"acao": acao, "usuario_id": usuario_id, "detalhes": detalhes}
-    try:
-        redis_client.rpush("eventos_negocio", json.dumps(payload))
-    except Exception as e:
-        print(f"Erro ao emitir log no Redis: {e}")
-
-
-# -------------------------------------------------------------
-# Identidade e autorização (Requisito 6: isolamento por usuário)
-# -------------------------------------------------------------
-
-def obter_user_id(current_user: dict):
-    """Lê o id do usuário no JWT, aceitando usuario_id, id ou sub."""
-    user_id = current_user.get("usuario_id") or current_user.get("id") or current_user.get("sub")
-    if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Identificador de usuário não encontrado no token.",
-        )
-    return user_id
-
-
-def exigir_dono_ou_admin(item: dict, current_user: dict, verbo: str, evento: str):
-    """Responde 403 se o item pertence a outro usuário e quem pede não é admin."""
-    user_id = obter_user_id(current_user)
-    papel = current_user.get("papel")
-    # str() nos dois lados: o JWT pode trazer o id como texto e o banco como inteiro.
-    if str(item["usuario_id"]) != str(user_id) and papel not in PAPEIS_PRIVILEGIADOS:
-        emitir_evento_log(evento, user_id, {"item_alvo": item["id"]})
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Acesso não autorizado: não pode {verbo} anúncios de outros utilizadores.",
-        )
-    return user_id
-
-
-def _ultimo_id(cursor):
-    if hasattr(cursor, "lastrowid") and cursor.lastrowid:
-        return cursor.lastrowid
-    if hasattr(cursor, "cursor") and hasattr(cursor.cursor, "lastrowid"):
-        return cursor.cursor.lastrowid
-    cursor.execute("SELECT last_insert_rowid() AS id")
-    row = cursor.fetchone()
-    return row["id"] if isinstance(row, dict) else row[0]
-
-
-def buscar_item(cursor, item_id: int) -> dict:
-    cursor.execute("SELECT * FROM itens_marketplace WHERE id = %s", (item_id,))
-    item = cursor.fetchone()
-    if not item:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item não encontrado.")
-    return item
-
-
-# -------------------------------------------------------------
-# Endpoints Públicos (Vitrine e Consulta)
-# -------------------------------------------------------------
-
-@app.get("/api/itens", response_model=List[ItemSaida])
-def listar_itens(categoria_id: Optional[int] = None, modalidade: Optional[str] = None):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        query = "SELECT * FROM itens_marketplace WHERE status = 'disponivel'"
-        params = []
-        if categoria_id:
-            query += " AND categoria_id = %s"
-            params.append(categoria_id)
-        if modalidade:
-            query += " AND modalidade = %s"
-            params.append(modalidade)
-        query += " ORDER BY criado_em DESC"
-        cursor.execute(query, tuple(params))
-        return cursor.fetchall()
-    finally:
-        conn.close()
-
-
-@app.get("/api/itens/{item_id}", response_model=ItemSaida)
-def obter_item(item_id: int):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        return buscar_item(cursor, item_id)
-    finally:
-        conn.close()
-
-
-# -------------------------------------------------------------
-# Endpoints Privados (CRUD com isolamento por usuário)
-# -------------------------------------------------------------
-
-@app.get("/api/meus-itens", response_model=List[ItemSaida])
-def listar_meus_itens(current_user: dict = Depends(get_current_user)):
-    user_id = obter_user_id(current_user)
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT * FROM itens_marketplace WHERE usuario_id = %s ORDER BY criado_em DESC",
-            (user_id,),
-        )
-        return cursor.fetchall()
-    finally:
-        conn.close()
-
-
-@app.post("/api/itens", response_model=ItemSaida, status_code=status.HTTP_201_CREATED)
-def criar_item(item_in: ItemCreate, current_user: dict = Depends(get_current_user)):
-    user_id = obter_user_id(current_user)
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            """
-            INSERT INTO itens_marketplace
-            (usuario_id, categoria_id, titulo, descricao, condicao, modalidade, preco, imagem_url, is_premium, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'disponivel')
-            """,
-            (
-                user_id,
-                item_in.categoria_id,
-                item_in.titulo,
-                item_in.descricao,
-                item_in.condicao,
-                item_in.modalidade,
-                item_in.preco,
-                getattr(item_in, "imagem_url", None),
-                1 if current_user.get("is_premium") else 0,
-            ),
-        )
-        conn.commit()
-
-        novo_id = _ultimo_id(cursor)
-
-        novo_item = buscar_item(cursor, novo_id)
-    finally:
-        conn.close()
-
-    emitir_evento_log("item_anunciado", user_id, {"item_id": novo_id, "titulo": item_in.titulo})
-    return novo_item
-
-
-@app.put("/api/itens/{item_id}", response_model=ItemSaida)
-def atualizar_item(item_id: int, item_in: ItemUpdate, current_user: dict = Depends(get_current_user)):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        item = buscar_item(cursor, item_id)
-        user_id = exigir_dono_ou_admin(item, current_user, "alterar", "tentativa_edicao_nao_autorizada")
-
-        bruto = item_in.model_dump(exclude_unset=True) if hasattr(item_in, "model_dump") \
-            else item_in.dict(exclude_unset=True)
-        dados = {k: v for k, v in bruto.items() if k in CAMPOS_EDITAVEIS}
-        if dados:
-            set_clausulas = [f"{k} = %s" for k in dados]
-            valores = list(dados.values()) + [item_id]
-            cursor.execute(
-                f"UPDATE itens_marketplace SET {', '.join(set_clausulas)} WHERE id = %s",
-                tuple(valores),
-            )
-            conn.commit()
-        item_atualizado = buscar_item(cursor, item_id)
-    finally:
-        conn.close()
-
-    emitir_evento_log("item_editado", user_id, {"item_id": item_id})
-    return item_atualizado
-
-
-@app.delete("/api/itens/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remover_item(item_id: int, current_user: dict = Depends(get_current_user)):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        item = buscar_item(cursor, item_id)
-        user_id = exigir_dono_ou_admin(item, current_user, "remover", "tentativa_remocao_nao_autorizada")
-        cursor.execute("DELETE FROM itens_marketplace WHERE id = %s", (item_id,))
-        conn.commit()
-    finally:
-        conn.close()
-
-    emitir_evento_log("item_removido", user_id, {"item_id": item_id})
-    return None
-
-
-# -------------------------------------------------------------
-# Rotas por papel (RBAC)
-# -------------------------------------------------------------
-
-class ModeracaoIn(BaseModel):
-    acao: Literal["aprovar", "suspender"]
-    motivo: Optional[str] = None
-
-
-@app.patch("/api/itens/{item_id}/moderar")
-def moderar_item(
-    item_id: int,
-    dados: ModeracaoIn,
-    usuario: dict = Depends(verificar_papeis(PAPEIS_MODERACAO)),
-):
-    # Papel 'aluno' recebe 403 automaticamente, mesmo via curl, Postman ou Swagger.
-    novo_status = "disponivel" if dados.acao == "aprovar" else "suspenso"
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        buscar_item(cursor, item_id)
-        cursor.execute("UPDATE itens_marketplace SET status = %s WHERE id = %s", (novo_status, item_id))
-        conn.commit()
-    finally:
-        conn.close()
-
-    emitir_evento_log("item_moderado", obter_user_id(usuario),
-                      {"item_id": item_id, "acao": dados.acao, "motivo": dados.motivo})
-    return {"status": "item moderado com sucesso", "novo_status": novo_status,
-            "moderado_por": usuario.get("email") or obter_user_id(usuario)}
-
-
-@app.get("/api/admin/estatisticas")
-def ver_estatisticas_admin(usuario: dict = Depends(verificar_papeis(["admin"]))):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT status, COUNT(*) AS total FROM itens_marketplace GROUP BY status")
-        por_status = {r["status"]: r["total"] for r in cursor.fetchall()}
-    finally:
-        conn.close()
-    return {"total_itens": sum(por_status.values()), "itens_por_status": por_status}
-
-
-# -------------------------------------------------------------
-# Interesse, chat e pagamento
-#   Plano comum  -> pagamento direto entre as partes (sem intermediário)
-#   Anúncio premium -> pagamento intermediado pela Stripe
-# -------------------------------------------------------------
-
-class MensagemIn(BaseModel):
-    texto: str = Field(..., min_length=1, max_length=1000)
-
-
-def _nome(usuario: dict) -> str:
-    return usuario.get("nome") or usuario.get("email") or f"Usuário {obter_user_id(usuario)}"
-
-
-def _conversa_do_usuario(cursor, conversa_id: int, current_user: dict):
-    cursor.execute("SELECT * FROM conversas WHERE id = %s", (conversa_id,))
-    conv = cursor.fetchone()
-    if not conv:
-        raise HTTPException(status_code=404, detail="Conversa não encontrada.")
-    uid = str(obter_user_id(current_user))
-    if uid not in (str(conv["anunciante_id"]), str(conv["interessado_id"])):
-        emitir_evento_log("tentativa_acesso_conversa_nao_autorizada", uid, {"conversa_id": conversa_id})
-        raise HTTPException(status_code=403, detail="Acesso não autorizado: esta conversa pertence a outros utilizadores.")
-    return conv, uid
-
-
-@app.post("/api/itens/{item_id}/interesse", status_code=status.HTTP_201_CREATED)
-def registrar_interesse(item_id: int, current_user: dict = Depends(get_current_user)):
-    uid = str(obter_user_id(current_user))
-    nome = _nome(current_user)
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        item = buscar_item(cursor, item_id)
-        if item["status"] != "disponivel":
-            raise HTTPException(status_code=409, detail="Este anúncio não está mais disponível.")
-        if str(item["usuario_id"]) == uid:
-            raise HTTPException(status_code=400, detail="Você não pode demonstrar interesse no próprio anúncio.")
-        cursor.execute("SELECT * FROM conversas WHERE item_id = %s AND interessado_id = %s", (item_id, uid))
-        conv = cursor.fetchone()
-        criada = conv is None
-        if criada:
-            cursor.execute(
-                "INSERT INTO conversas (item_id, anunciante_id, interessado_id, interessado_nome) VALUES (%s, %s, %s, %s)",
-                (item_id, str(item["usuario_id"]), uid, nome))
-            conversa_id = _ultimo_id(cursor)
-            cursor.execute(
-                "INSERT INTO mensagens (conversa_id, remetente_id, texto) VALUES (%s, %s, %s)",
-                (conversa_id, uid, f"Olá! Tenho interesse em «{item['titulo']}»."))
-            conn.commit()
-        else:
-            conversa_id = conv["id"]
-    finally:
-        conn.close()
-    if criada:
-        emitir_evento_log("interesse_registrado", uid, {"item_id": item_id, "conversa_id": conversa_id})
-    return {"conversa_id": conversa_id, "criada": criada}
-
-
-@app.get("/api/conversas/nao-lidas")
-def contar_nao_lidas(current_user: dict = Depends(get_current_user)):
-    uid = str(obter_user_id(current_user))
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            """SELECT COUNT(*) AS total FROM mensagens m JOIN conversas c ON c.id = m.conversa_id
-               WHERE (c.anunciante_id = %s OR c.interessado_id = %s) AND m.remetente_id <> %s AND m.lida = 0""",
-            (uid, uid, uid))
-        return {"nao_lidas": cursor.fetchone()["total"]}
-    finally:
-        conn.close()
-
-
-@app.get("/api/conversas")
-def listar_conversas(current_user: dict = Depends(get_current_user)):
-    uid = str(obter_user_id(current_user))
-    nome = _nome(current_user)
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            """SELECT c.*, i.titulo, i.preco, i.is_premium,
-                 (SELECT COUNT(*) FROM mensagens m WHERE m.conversa_id = c.id AND m.remetente_id <> %s AND m.lida = 0) AS nao_lidas,
-                 (SELECT texto FROM mensagens m WHERE m.conversa_id = c.id ORDER BY m.id DESC LIMIT 1) AS ultima
-               FROM conversas c JOIN itens_marketplace i ON i.id = c.item_id
-               WHERE c.anunciante_id = %s OR c.interessado_id = %s ORDER BY c.id DESC""",
-            (uid, uid, uid))
-        linhas = cursor.fetchall()
-        mudou = False
-        for c in linhas:  # guarda o nome do anunciante na primeira vez que ele abre suas conversas
-            if str(c["anunciante_id"]) == uid and not c["anunciante_nome"]:
-                cursor.execute("UPDATE conversas SET anunciante_nome = %s WHERE id = %s", (nome, c["id"]))
-                c["anunciante_nome"] = nome
-                mudou = True
-        if mudou:
-            conn.commit()
-    finally:
-        conn.close()
-    saida = []
-    for c in linhas:
-        sou_anunciante = str(c["anunciante_id"]) == uid
-        saida.append({
-            "id": c["id"], "item_id": c["item_id"], "titulo": c["titulo"], "preco": c["preco"],
-            "pagamento": "stripe" if c["is_premium"] else "direto",
-            "meu_papel": "anunciante" if sou_anunciante else "interessado",
-            "outro_nome": (c["interessado_nome"] if sou_anunciante else c["anunciante_nome"]) or "Anunciante",
-            "nao_lidas": c["nao_lidas"], "ultima": c["ultima"],
-        })
-    return saida
-
-
-@app.get("/api/conversas/{conversa_id}/mensagens")
-def listar_mensagens(conversa_id: int, depois_de: int = 0, current_user: dict = Depends(get_current_user)):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        _, uid = _conversa_do_usuario(cursor, conversa_id, current_user)
-        cursor.execute("SELECT * FROM mensagens WHERE conversa_id = %s AND id > %s ORDER BY id", (conversa_id, depois_de))
-        msgs = cursor.fetchall()
-        cursor.execute("UPDATE mensagens SET lida = 1 WHERE conversa_id = %s AND remetente_id <> %s AND lida = 0",
-                       (conversa_id, uid))
-        conn.commit()
-    finally:
-        conn.close()
-    return {"mensagens": [{"id": m["id"], "minha": str(m["remetente_id"]) == uid, "texto": m["texto"],
-                           "criado_em": str(m["criado_em"])} for m in msgs]}
-
-
-@app.post("/api/conversas/{conversa_id}/mensagens", status_code=status.HTTP_201_CREATED)
-def enviar_mensagem(conversa_id: int, dados: MensagemIn, current_user: dict = Depends(get_current_user)):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        _, uid = _conversa_do_usuario(cursor, conversa_id, current_user)
-        cursor.execute("INSERT INTO mensagens (conversa_id, remetente_id, texto) VALUES (%s, %s, %s)",
-                       (conversa_id, uid, dados.texto.strip()))
-        conn.commit()
-    finally:
-        conn.close()
-    emitir_evento_log("mensagem_enviada", uid, {"conversa_id": conversa_id})
-    return {"mensagem": "enviada"}
-
-
-@app.post("/api/conversas/{conversa_id}/pagar")
-async def pagar_com_stripe(conversa_id: int, request: Request, current_user: dict = Depends(get_current_user)):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        conv, uid = _conversa_do_usuario(cursor, conversa_id, current_user)
-        item = buscar_item(cursor, conv["item_id"])
-    finally:
-        conn.close()
-    if uid != str(conv["interessado_id"]):
-        raise HTTPException(status_code=403, detail="Apenas o comprador pode iniciar o pagamento.")
-    if not item.get("is_premium"):
-        raise HTTPException(status_code=400, detail="Este anúncio usa pagamento direto entre as partes, sem intermediário.")
-    preco = float(item["preco"] or 0)
-    if preco <= 0:
-        raise HTTPException(status_code=400, detail="Anúncio sem valor para cobrança.")
-    if not STRIPE_SECRET_KEY:
-        raise HTTPException(status_code=503, detail="Pagamento Stripe não configurado no servidor.")
-    base = (PUBLIC_BASE_URL or str(request.base_url)).rstrip("/")
-    form = {
-        "mode": "payment",
-        "success_url": f"{base}/?pagamento=ok", "cancel_url": f"{base}/?pagamento=cancelado",
-        "line_items[0][quantity]": "1",
-        "line_items[0][price_data][currency]": "brl",
-        "line_items[0][price_data][unit_amount]": str(int(round(preco * 100))),
-        "line_items[0][price_data][product_data][name]": item["titulo"],
-        "metadata[item_id]": str(item["id"]), "metadata[conversa_id]": str(conversa_id), "metadata[comprador_id]": uid,
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CampuSwap – Materiais acadêmicos que circulam no seu campus</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root{--ink:#1b1b3a;--violet:#5b4bdb;--violet-d:#3f32a8;--lime:#c8f169;--paper:#f6f5fb;--muted:#6b6b85;--line:#e4e2f0}
+    body{font-family:'DM Sans',system-ui,sans-serif;background:var(--paper);color:var(--ink)}
+    h1,h2,h3,h4,.display{font-family:'Bricolage Grotesque','DM Sans',sans-serif;letter-spacing:-.02em}
+    :focus-visible{outline:3px solid var(--violet);outline-offset:2px}
+    .btn-main{background:var(--lime);color:var(--ink);font-weight:700;border-radius:14px;padding:.95rem 1.6rem;transition:transform .15s,box-shadow .15s;box-shadow:0 6px 0 #9bc23c}
+    .btn-main:hover{transform:translateY(2px);box-shadow:0 4px 0 #9bc23c}
+    .btn-ghost{border:2px solid rgba(255,255,255,.35);color:#fff;font-weight:700;border-radius:14px;padding:.85rem 1.5rem}
+    .btn-ghost:hover{background:rgba(255,255,255,.1)}
+    .hero{background:radial-gradient(900px 500px at 85% 10%,#4a3bc4 0,transparent 60%),var(--ink);color:#fff}
+    .tag-price{position:relative;display:inline-block}
+    .tag-price::after{content:"";position:absolute;left:-2px;right:-2px;top:52%;height:3px;background:#ff6b57;transform:rotate(-4deg)}
+    .reveal{animation:rise .7s cubic-bezier(.2,.7,.2,1) both}
+    .reveal.d2{animation-delay:.15s}
+    @keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+    @media (prefers-reduced-motion:reduce){.reveal{animation:none}.btn-main{transition:none}}
+    .pillar{padding:1.75rem 0}
+    @media(min-width:768px){.pillar{padding:0 2rem;border-left:1px solid var(--line)}.pillar:first-child{border-left:0;padding-left:0}}
+    input[type=range]{-webkit-appearance:none;width:100%;height:10px;border-radius:99px;background:linear-gradient(90deg,var(--violet),var(--lime));outline-offset:6px}
+    input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:28px;height:28px;border-radius:50%;background:#fff;border:4px solid var(--violet);cursor:pointer}
+    input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:#fff;border:4px solid var(--violet);cursor:pointer}
+    details.faq{border-bottom:1px solid var(--line);padding:1.1rem 0}
+    details.faq summary{cursor:pointer;font-weight:700;list-style:none;display:flex;justify-content:space-between;gap:1rem}
+    details.faq summary::-webkit-details-marker{display:none}
+    details.faq summary::after{content:"+";color:var(--violet);font-size:1.4rem;line-height:1}
+    details.faq[open] summary::after{content:"–"}
+    /* Polimento da área logada */
+    #visao-autenticada .bg-white{border-radius:20px}
+    #visao-autenticada .shadow-sm{box-shadow:0 1px 2px rgba(27,27,58,.04),0 8px 24px -12px rgba(27,27,58,.12)}
+    #visao-autenticada .border-gray-200{border-color:var(--line)}
+    header{backdrop-filter:blur(10px);background:rgba(255,255,255,.88)!important}
+    .card-item:hover{transform:translateY(-3px);box-shadow:0 16px 32px -16px rgba(63,50,168,.35)}
+    .card-item{transition:transform .2s,box-shadow .2s}
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between antialiased">
+
+  <header class="border-b border-gray-200 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex justify-between items-center">
+      <div class="flex items-center space-x-3 cursor-pointer" onclick="mudarAba('overview')">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-md" style="background:var(--violet)">
+          <svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10h14l-4-4m-6 8H3l4 4"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>
+        </div>
+        <h1 class="text-xl font-extrabold leading-none" style="color:var(--violet-d)">CampuSwap</h1>
+      </div>
+      <div class="hidden md:flex items-center bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200 w-80">
+        <i class="fa-solid fa-magnifying-glass text-gray-400 mr-2 text-xs"></i>
+        <input type="text" id="campo-busca-nav" oninput="filtrarItensNavbar()" aria-label="Buscar materiais" placeholder="Buscar materiais..." class="bg-transparent text-sm w-full focus:outline-none">
+      </div>
+      <nav id="nav-actions" class="flex items-center space-x-3">
+        <button onclick="mostrarLogin()" class="text-white font-bold px-4 py-2 rounded-lg text-sm shadow transition" style="background:var(--violet)">Entrar</button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ================= LANDING ================= -->
+  <div id="visao-publica">
+    <section class="hero">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 py-16 lg:py-24 grid lg:grid-cols-2 gap-12 items-center">
+        <div class="reveal">
+          <h2 class="display text-4xl sm:text-6xl font-extrabold leading-[1.05]">Seu semestre custa menos quando o material circula.</h2>
+          <p class="mt-6 text-lg text-indigo-100 max-w-xl leading-relaxed">No CampuSwap, estudantes do seu campus compram, vendem, trocam e emprestam livros, calculadoras e apostilas. Você paga menos pelo que precisa e recebe pelo que parou de usar.</p>
+          <div class="mt-8 flex flex-wrap gap-3">
+            <button onclick="mostrarCadastro()" class="btn-main text-base">Criar conta gratuita</button>
+            <a href="#como-funciona" class="btn-ghost">Ver como funciona</a>
+          </div>
+          <p class="mt-5 text-sm text-indigo-200">Cadastro com e-mail institucional. Sem mensalidade para anunciar.</p>
+        </div>
+
+        <div class="reveal d2" aria-label="Exemplo de economia">
+          <div class="bg-white text-gray-900 rounded-3xl p-6 sm:p-8 shadow-2xl max-w-md mx-auto lg:ml-auto">
+            <p class="text-sm font-bold" style="color:var(--muted)">Exemplo: lista do 1º semestre</p>
+            <ul class="mt-4 divide-y" style="border-color:var(--line)">
+              <li class="py-3 flex justify-between items-center"><span class="font-semibold">Cálculo, vol. 1</span><span><span class="tag-price text-gray-400 mr-2">R$ 142</span><b style="color:var(--violet-d)">R$ 48</b></span></li>
+              <li class="py-3 flex justify-between items-center"><span class="font-semibold">Calculadora científica</span><span><span class="tag-price text-gray-400 mr-2">R$ 89</span><b style="color:var(--violet-d)">R$ 35</b></span></li>
+              <li class="py-3 flex justify-between items-center"><span class="font-semibold">Apostila de Algoritmos</span><span><span class="tag-price text-gray-400 mr-2">R$ 60</span><b style="color:var(--violet-d)">Troca</b></span></li>
+            </ul>
+            <div class="mt-4 rounded-2xl p-4 flex justify-between items-center" style="background:var(--lime)">
+              <span class="font-bold">Você economiza</span>
+              <span class="display text-3xl font-extrabold">R$ 168</span>
+            </div>
+            <p class="text-xs mt-3" style="color:var(--muted)">Valores ilustrativos. O preço final é combinado entre os estudantes.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Proposta de valor -->
+    <section class="max-w-7xl mx-auto px-4 sm:px-6 py-16">
+      <h2 class="display text-3xl sm:text-4xl font-extrabold max-w-2xl">Feito para quem estuda, não para quem revende.</h2>
+      <div class="mt-10 grid md:grid-cols-3">
+        <div class="pillar">
+          <i class="fa-solid fa-piggy-bank text-2xl" style="color:var(--violet)"></i>
+          <h3 class="text-xl font-bold mt-3">Pague menos pelo que precisa</h3>
+          <p class="mt-2 leading-relaxed" style="color:var(--muted)">Encontre o livro da disciplina com colegas que já cursaram, em bom estado e por uma fração do preço de novo.</p>
+        </div>
+        <div class="pillar">
+          <i class="fa-solid fa-arrows-rotate text-2xl" style="color:var(--violet)"></i>
+          <h3 class="text-xl font-bold mt-3">Transforme o que sobrou em dinheiro</h3>
+          <p class="mt-2 leading-relaxed" style="color:var(--muted)">Anuncie o material do semestre que acabou. Venda, troque, empreste ou doe em poucos cliques.</p>
+        </div>
+        <div class="pillar">
+          <i class="fa-solid fa-location-dot text-2xl" style="color:var(--violet)"></i>
+          <h3 class="text-xl font-bold mt-3">Entrega no corredor do campus</h3>
+          <p class="mt-2 leading-relaxed" style="color:var(--muted)">Todo anunciante é estudante verificado. Combine a entrega entre uma aula e outra, sem frete e sem espera.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Calculadora -->
+    <section class="bg-white border-y" style="border-color:var(--line)">
+      <div class="max-w-4xl mx-auto px-4 sm:px-6 py-16 grid md:grid-cols-2 gap-10 items-center">
+        <div>
+          <h2 class="display text-3xl font-extrabold">Quanto você pode economizar?</h2>
+          <p class="mt-3 leading-relaxed" style="color:var(--muted)">Arraste para informar quantos materiais você usa por semestre. Estimamos a economia comprando usado e vendendo depois.</p>
+        </div>
+        <div>
+          <label for="calc-qtd" class="font-bold flex justify-between"><span>Materiais por semestre</span><span id="calc-qtd-out" class="display text-xl">6</span></label>
+          <input type="range" id="calc-qtd" min="1" max="12" value="6" class="mt-4" oninput="calcularEconomia()">
+          <div class="mt-6 rounded-2xl p-5" style="background:var(--paper)">
+            <p class="text-sm" style="color:var(--muted)">Economia estimada por semestre</p>
+            <p id="calc-resultado" class="display text-4xl font-extrabold" style="color:var(--violet-d)">R$ 0</p>
+            <p class="text-xs mt-1" style="color:var(--muted)">Estimativa: R$ 90 de média por material, com 60% de economia na compra e 40% de retorno na venda.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Como funciona -->
+    <section id="como-funciona" class="max-w-7xl mx-auto px-4 sm:px-6 py-16">
+      <h2 class="display text-3xl sm:text-4xl font-extrabold">Como funciona</h2>
+      <ol class="mt-10 grid md:grid-cols-3 gap-8">
+        <li><span class="display text-5xl font-extrabold" style="color:var(--lime);-webkit-text-stroke:2px var(--ink)">1</span><h3 class="text-xl font-bold mt-2">Crie sua conta</h3><p class="mt-2" style="color:var(--muted)">Use seu e-mail institucional para entrar na comunidade do seu campus.</p></li>
+        <li><span class="display text-5xl font-extrabold" style="color:var(--lime);-webkit-text-stroke:2px var(--ink)">2</span><h3 class="text-xl font-bold mt-2">Anuncie ou procure</h3><p class="mt-2" style="color:var(--muted)">Publique um material com foto e preço, ou busque o que a sua disciplina pede.</p></li>
+        <li><span class="display text-5xl font-extrabold" style="color:var(--lime);-webkit-text-stroke:2px var(--ink)">3</span><h3 class="text-xl font-bold mt-2">Combine a entrega</h3><p class="mt-2" style="color:var(--muted)">Toque em “Tenho interesse” e acerte o encontro com o colega no campus.</p></li>
+      </ol>
+    </section>
+
+    <!-- FAQ -->
+    <section class="max-w-3xl mx-auto px-4 sm:px-6 pb-16">
+      <h2 class="display text-3xl font-extrabold mb-4">Perguntas frequentes</h2>
+      <details class="faq"><summary>Anunciar custa alguma coisa?</summary><p class="mt-2" style="color:var(--muted)">Não. Publicar anúncios é gratuito. O Plano Premium adiciona destaque e estatísticas completas.</p></details>
+      <details class="faq"><summary>Quem pode participar?</summary><p class="mt-2" style="color:var(--muted)">Estudantes com e-mail institucional, para manter a comunidade confiável.</p></details>
+      <details class="faq"><summary>Como o pagamento é feito?</summary><p class="mt-2" style="color:var(--muted)">Vendedor e comprador combinam entre si. Para o Plano Premium, o pagamento usa checkout seguro da Stripe.</p></details>
+      <details class="faq"><summary>Posso doar ou emprestar um material?</summary><p class="mt-2" style="color:var(--muted)">Sim. Escolha “Doação” ou “Empréstimo” ao anunciar.</p></details>
+    </section>
+
+    <section class="hero text-center px-4 py-16">
+      <h2 class="display text-3xl sm:text-4xl font-extrabold max-w-2xl mx-auto">O próximo semestre começa mais leve.</h2>
+      <button onclick="mostrarCadastro()" class="btn-main text-base mt-8">Criar conta gratuita</button>
+    </section>
+  </div>
+
+  <!-- ================= ÁREA LOGADA ================= -->
+  <div id="visao-autenticada" class="hidden flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <aside class="lg:col-span-3 space-y-5">
+        <div onclick="mudarAba('perfil')" class="bg-white p-5 shadow-sm border border-gray-200 cursor-pointer hover:border-indigo-400 transition group">
+          <div class="flex items-center space-x-3 mb-4 pb-4 border-b border-gray-100">
+            <div class="w-12 h-12 rounded-xl text-white flex items-center justify-center font-black text-xl shadow overflow-hidden" style="background:var(--violet)">
+              <span id="user-avatar-letra">G</span>
+              <img id="sidebar-avatar-img" src="" alt="Avatar" class="w-full h-full object-cover hidden">
+            </div>
+            <div class="overflow-hidden">
+              <h4 id="user-display-name" class="font-extrabold text-sm truncate">Gabriel Castão</h4>
+              <p id="user-display-email" class="text-xs text-gray-500 truncate">gabriel@fatec.sp.gov.br</p>
+            </div>
+          </div>
+          <div class="flex items-center justify-between text-xs font-bold" style="color:var(--violet)"><span>Ver perfil e foto</span><i class="fa-solid fa-chevron-right text-gray-300"></i></div>
+        </div>
+
+        <div class="bg-white p-3 shadow-sm border border-gray-200 space-y-1 text-sm font-semibold">
+          <button id="btn-menu-overview" onclick="mudarAba('overview')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-indigo-50 text-indigo-700"><i class="fa-solid fa-chart-pie w-4"></i> Visão geral</button>
+          <button id="btn-menu-vitrine" onclick="mudarAba('vitrine')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 text-gray-700"><i class="fa-solid fa-store w-4"></i> Explorar vitrine</button>
+          <button id="btn-menu-meus-anuncios" onclick="mudarAba('meus-anuncios')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 text-gray-700"><i class="fa-solid fa-tags w-4"></i> Meus anúncios</button>
+          <button id="btn-menu-mensagens" onclick="mudarAba('mensagens')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 text-gray-700"><i class="fa-solid fa-comments w-4"></i> Mensagens <span id="badge-msgs" class="hidden ml-auto bg-red-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">0</span></button>
+          <button id="btn-menu-perfil" onclick="mudarAba('perfil')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 text-gray-700"><i class="fa-solid fa-user-gear w-4"></i> Meu perfil</button>
+          <button onclick="abrirModalNovoItem()" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 text-green-700"><i class="fa-solid fa-circle-plus w-4"></i> Anunciar material</button>
+        </div>
+
+        <div class="p-5 rounded-2xl shadow-md text-white" style="background:var(--ink)">
+          <span class="text-xs font-bold" style="color:var(--lime)">Plano atual</span>
+          <h5 id="badge-plano" class="text-lg font-extrabold mt-1">Plano PRO Campus ⭐</h5>
+          <p class="text-xs text-indigo-200 mt-2 mb-4 leading-relaxed">Destaque ativo para seus materiais e acesso às estatísticas completas.</p>
+          <button onclick="iniciarCheckoutStripe()" class="btn-main w-full text-xs !py-2.5 !shadow-none"><i class="fa-solid fa-bolt mr-1"></i> Fazer upgrade para Premium</button>
+        </div>
+      </aside>
+
+      <section class="lg:col-span-9 space-y-6">
+        <div id="aba-overview" class="space-y-6">
+          <div>
+            <h2 class="text-2xl font-extrabold" id="saudacao-user">Bem-vindo de volta!</h2>
+            <p class="text-sm text-gray-500 mt-0.5">Veja o que está circulando no seu campus.</p>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div class="bg-white p-4 border border-gray-200 shadow-sm"><span class="text-xs text-gray-500 font-bold">Meus itens</span><p class="display text-3xl font-extrabold mt-1" id="kpi-meus-itens">0</p><span class="text-xs text-green-600 font-bold">Ativos</span></div>
+            <div class="bg-white p-4 border border-gray-200 shadow-sm"><span class="text-xs text-gray-500 font-bold">No campus</span><p class="display text-3xl font-extrabold mt-1" style="color:var(--violet)" id="kpi-total-campus">0</p><span class="text-xs font-bold" style="color:var(--violet)">Disponíveis</span></div>
+            <div class="bg-white p-4 border border-gray-200 shadow-sm"><span class="text-xs text-gray-500 font-bold">Valor em circulação</span><p class="display text-3xl font-extrabold text-green-600 mt-1" id="kpi-economia">R$ 0,00</p><span class="text-xs text-green-700 font-bold">Economia circular</span></div>
+            <div class="bg-white p-4 border border-gray-200 shadow-sm"><span class="text-xs text-gray-500 font-bold">Status da conta</span><p class="text-sm font-extrabold mt-3 truncate" id="kpi-status-conta">Estudante Premium</p><span class="text-xs text-blue-600 font-bold"><i class="fa-solid fa-circle-check"></i> Verificada</span></div>
+          </div>
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 bg-white p-5 border border-gray-200 shadow-sm">
+              <div class="flex justify-between items-center mb-4"><h3 class="font-bold text-sm">Atividade no campus</h3><span class="text-xs text-gray-400 font-bold">Últimos 7 dias</span></div>
+              <div style="height:220px"><canvas id="graficoAtividade"></canvas></div>
+            </div>
+            <div class="bg-white p-5 border border-gray-200 shadow-sm">
+              <h3 class="font-bold text-sm mb-2">Tipos de anúncio</h3>
+              <div style="height:190px"><canvas id="graficoModalidades"></canvas></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="aba-vitrine" class="hidden space-y-6">
+          <div class="bg-white p-5 border border-gray-200 shadow-sm flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+            <div><h2 class="text-2xl font-extrabold">Vitrine do campus</h2><p class="text-sm text-gray-500 mt-1">Materiais anunciados por outros estudantes.</p></div>
+            <div class="flex gap-2">
+              <button onclick="carregarItens()" class="bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded-xl text-xs font-bold"><i class="fa-solid fa-rotate-right"></i> Atualizar</button>
+              <button onclick="abrirModalNovoItem()" class="text-white px-4 py-2 rounded-xl text-xs font-bold" style="background:var(--violet)"><i class="fa-solid fa-plus"></i> Novo anúncio</button>
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-2 items-center bg-white p-3 border border-gray-200 text-xs font-bold">
+            <span class="text-gray-500 ml-2">Filtrar:</span>
+            <button onclick="filtrarVitrine('todos')" id="btn-filtro-todos" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white">Todos</button>
+            <button onclick="filtrarVitrine('venda')" id="btn-filtro-venda" class="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600">Venda</button>
+            <button onclick="filtrarVitrine('troca')" id="btn-filtro-troca" class="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600">Troca</button>
+            <button onclick="filtrarVitrine('doacao')" id="btn-filtro-doacao" class="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600">Doação</button>
+          </div>
+          <div id="grid-vitrine" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+            <p class="text-gray-400 text-center col-span-full py-12">Carregando anúncios...</p>
+          </div>
+        </div>
+
+        <div id="aba-meus-anuncios" class="hidden space-y-6">
+          <div class="bg-white p-5 border border-gray-200 shadow-sm flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+            <div><h2 class="text-2xl font-extrabold">Meus anúncios</h2><p class="text-sm text-gray-500 mt-1">Materiais que você publicou para venda, troca, empréstimo ou doação.</p></div>
+            <button onclick="abrirModalNovoItem()" class="text-white px-4 py-2 rounded-xl text-xs font-bold" style="background:var(--violet)"><i class="fa-solid fa-plus"></i> Novo anúncio</button>
+          </div>
+          <div id="grid-meus-itens" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6"></div>
+        </div>
+
+        <div id="aba-mensagens" class="hidden">
+          <div class="grid md:grid-cols-3 gap-4">
+            <div class="bg-white border border-gray-200 shadow-sm p-3 overflow-y-auto" style="max-height:560px">
+              <h3 class="font-extrabold px-2 py-2">Conversas</h3>
+              <div id="lista-conversas" class="space-y-1"></div>
+            </div>
+            <div class="md:col-span-2 bg-white border border-gray-200 shadow-sm flex flex-col" style="height:560px">
+              <div id="chat-topo" class="p-4 border-b border-gray-100 text-sm text-gray-500">Selecione uma conversa.</div>
+              <div id="chat-msgs" class="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-50"></div>
+              <div id="chat-pagto" class="hidden px-4 py-2 text-xs"></div>
+              <div id="chat-form" class="hidden p-3 border-t border-gray-100 flex gap-2">
+                <input id="chat-texto" maxlength="1000" class="flex-1 p-2.5 border rounded-xl text-sm" placeholder="Escreva uma mensagem..." onkeydown="if(event.key==='Enter')enviarMensagem()">
+                <button onclick="enviarMensagem()" class="text-white px-4 rounded-xl text-sm font-bold" style="background:var(--violet)">Enviar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="aba-perfil" class="hidden">
+          <div class="bg-white p-6 border border-gray-200 shadow-sm">
+            <h2 class="text-2xl font-extrabold mb-1">Perfil do estudante</h2>
+            <p class="text-sm text-gray-500 mb-6">Gerencie sua foto e seus dados acadêmicos.</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+              <div class="bg-gray-50 p-6 rounded-2xl text-center flex flex-col items-center">
+                <div class="w-28 h-28 rounded-2xl text-white flex items-center justify-center font-black text-4xl shadow-md overflow-hidden mb-4" style="background:var(--violet)">
+                  <span id="perfil-avatar-letra">G</span>
+                  <img id="perfil-avatar-img" src="" alt="Foto de perfil" class="w-full h-full object-cover hidden">
+                </div>
+                <label class="cursor-pointer text-white text-xs font-bold px-4 py-2 rounded-xl shadow flex items-center gap-2" style="background:var(--violet)">
+                  <i class="fa-solid fa-cloud-arrow-up"></i><span>Enviar foto</span>
+                  <input type="file" id="input-foto-perfil" accept="image/*" onchange="uploadFotoMinio(event)" class="hidden">
+                </label>
+                <span class="text-xs text-gray-500 mt-2">JPG, PNG ou WebP</span>
+              </div>
+              <div class="md:col-span-2 space-y-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div><label class="block text-xs font-bold text-gray-500 mb-1">Nome completo</label><input type="text" id="perfil-campo-nome" readonly class="w-full p-2.5 bg-gray-50 border rounded-xl text-sm font-bold"></div>
+                  <div><label class="block text-xs font-bold text-gray-500 mb-1">E-mail acadêmico</label><input type="text" id="perfil-campo-email" readonly class="w-full p-2.5 bg-gray-50 border rounded-xl text-sm font-bold"></div>
+                  <div><label class="block text-xs font-bold text-gray-500 mb-1">Nível de acesso</label><span class="inline-flex px-3 py-1 rounded-lg text-xs font-black bg-indigo-100 text-indigo-800">Estudante verificado</span></div>
+                  <div><label class="block text-xs font-bold text-gray-500 mb-1">Assinatura</label><span class="inline-flex px-3 py-1 rounded-lg text-xs font-black bg-green-100 text-green-800">Plano PRO Campus ⭐</span></div>
+                </div>
+                <div class="pt-4 border-t border-gray-100 flex justify-end"><button onclick="mostrarToast('Dados sincronizados com o servidor.')" class="bg-gray-100 hover:bg-gray-200 font-bold px-4 py-2 rounded-xl text-xs">Atualizar informações</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <footer class="bg-white border-t border-gray-200 text-gray-500 py-6 text-xs text-center">
+    <p>CampuSwap © 2026 – Plataforma acadêmica de economia circular estudantil</p>
+  </footer>
+
+  <div id="toast" role="status" class="fixed bottom-5 right-5 bg-gray-900 text-white px-5 py-3 rounded-xl shadow-2xl z-50 transform translate-y-20 opacity-0 transition-all duration-300 flex items-center gap-3">
+    <span id="toast-icon"></span><span id="toast-msg" class="text-sm font-medium"></span>
+  </div>
+
+  <!-- MODAIS -->
+  <div id="modal-login" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md">
+      <div class="flex justify-between items-center mb-6"><h3 class="text-xl font-extrabold">Entrar na sua conta</h3><button onclick="fecharModais()" aria-label="Fechar" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button></div>
+      <form onsubmit="realizarLogin(event)" class="space-y-4">
+        <div><label class="block text-xs font-bold text-gray-600 mb-1">E-mail acadêmico</label><input type="email" id="login-email" required class="w-full p-2.5 border rounded-xl text-sm" placeholder="aluno@fatec.sp.gov.br"></div>
+        <div><label class="block text-xs font-bold text-gray-600 mb-1">Senha</label><input type="password" id="login-senha" required class="w-full p-2.5 border rounded-xl text-sm" placeholder="••••••••"></div>
+        <p id="login-erro" class="text-red-500 text-xs font-bold hidden"></p>
+        <button type="submit" class="w-full text-white py-2.5 rounded-xl font-bold text-sm" style="background:var(--violet)">Entrar</button>
+        <p class="text-xs text-center text-gray-500">Ainda não tem conta? <button type="button" onclick="mostrarCadastro()" class="font-bold underline" style="color:var(--violet)">Criar conta</button></p>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-cadastro" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md">
+      <div class="flex justify-between items-center mb-6"><h3 class="text-xl font-extrabold">Criar conta universitária</h3><button onclick="fecharModais()" aria-label="Fechar" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button></div>
+      <form onsubmit="realizarCadastro(event)" class="space-y-4">
+        <div><label class="block text-xs font-bold text-gray-600 mb-1">Nome completo</label><input type="text" id="cad-nome" required class="w-full p-2.5 border rounded-xl text-sm"></div>
+        <div><label class="block text-xs font-bold text-gray-600 mb-1">E-mail institucional</label><input type="email" id="cad-email" required class="w-full p-2.5 border rounded-xl text-sm" placeholder="aluno@fatec.sp.gov.br"></div>
+        <div><label class="block text-xs font-bold text-gray-600 mb-1">Senha</label><input type="password" id="cad-senha" required class="w-full p-2.5 border rounded-xl text-sm"></div>
+        <p id="cad-erro" class="text-red-500 text-xs font-bold hidden"></p>
+        <button type="submit" class="btn-main w-full text-sm !py-2.5 !shadow-none">Criar conta</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-item" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-lg max-h-screen overflow-y-auto">
+      <div class="flex justify-between items-center mb-6"><h3 class="text-xl font-extrabold">Anunciar material</h3><button onclick="fecharModais()" aria-label="Fechar" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button></div>
+      <form onsubmit="cadastrarItem(event)" class="space-y-4">
+        <div><label class="block text-xs font-bold text-gray-600 mb-1">Título</label><input type="text" id="item-titulo" required class="w-full p-2.5 border rounded-xl text-sm" placeholder="Ex: Calculadora Casio fx-991"></div>
+        <div class="grid grid-cols-3 gap-3">
+          <div><label class="block text-xs font-bold text-gray-600 mb-1">Modalidade</label><select id="item-modalidade" class="w-full p-2.5 border rounded-xl text-sm"><option value="venda">Venda</option><option value="troca">Troca</option><option value="emprestimo">Empréstimo</option><option value="doacao">Doação</option></select></div>
+          <div><label class="block text-xs font-bold text-gray-600 mb-1">Condição</label><select id="item-condicao" class="w-full p-2.5 border rounded-xl text-sm"><option value="novo">Novo</option><option value="semi-novo" selected>Semi-novo</option><option value="usado">Usado</option></select></div>
+          <div><label class="block text-xs font-bold text-gray-600 mb-1">Preço (R$)</label><input type="text" id="item-preco" value="0.00" class="w-full p-2.5 border rounded-xl text-sm"></div>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-gray-600 mb-1">Foto do material</label>
+          <div class="flex items-center gap-3">
+            <label class="cursor-pointer bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded-xl text-xs font-bold border border-gray-300 flex items-center gap-2"><i class="fa-solid fa-camera" style="color:var(--violet)"></i><span>Escolher imagem</span><input type="file" id="item-foto" accept="image/*" onchange="previsualizarFotoItem(event)" class="hidden"></label>
+            <span id="nome-arquivo-foto" class="text-xs text-gray-500 truncate max-w-xs">Nenhum arquivo selecionado</span>
+          </div>
+          <div id="preview-foto-container" class="mt-2 hidden"><img id="preview-foto-img" src="" alt="Prévia" class="h-20 w-20 object-cover rounded-xl border"></div>
+        </div>
+        <div><label class="block text-xs font-bold text-gray-600 mb-1">Descrição</label><textarea id="item-descricao" rows="3" class="w-full p-2.5 border rounded-xl text-sm" placeholder="Conservação, curso, edição..."></textarea></div>
+        <p id="item-erro" class="text-red-500 text-xs font-bold hidden"></p>
+        <button type="submit" class="w-full text-white py-2.5 rounded-xl font-bold text-sm" style="background:var(--violet)">Publicar anúncio</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = window.location.origin;
+    let todosItens = [], chartAtividade = null, chartModalidades = null, filtroAtualVitrine = 'todos', arquivoFotoItem = null;
+
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const ativo = "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-indigo-50 text-indigo-700 font-bold transition";
+    const inativo = "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 text-gray-700 transition";
+
+    function calcularEconomia() {
+      const n = +document.getElementById('calc-qtd').value;
+      document.getElementById('calc-qtd-out').textContent = n;
+      const total = n * 90 * (0.6 + 0.4);
+      document.getElementById('calc-resultado').textContent = 'R$ ' + Math.round(total).toLocaleString('pt-BR');
     }
-    async with httpx.AsyncClient() as client:
-        try:
-            res = await client.post("https://api.stripe.com/v1/checkout/sessions", data=form,
-                                    auth=(STRIPE_SECRET_KEY, ""), timeout=15.0)
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Erro ao conectar à Stripe: {e}")
-    corpo = res.json()
-    if res.status_code >= 400:
-        raise HTTPException(status_code=502, detail=corpo.get("error", {}).get("message", "Erro na Stripe."))
-    emitir_evento_log("pagamento_stripe_iniciado", uid, {"item_id": item["id"], "conversa_id": conversa_id})
-    return {"url": corpo["url"]}
 
+    function mostrarToast(msg, tipo = 'sucesso') {
+      document.getElementById('toast-msg').textContent = msg;
+      document.getElementById('toast-icon').innerHTML = tipo === 'sucesso'
+        ? '<i class="fa-solid fa-circle-check text-green-400"></i>' : '<i class="fa-solid fa-triangle-exclamation text-yellow-400"></i>';
+      const t = document.getElementById('toast');
+      t.classList.remove('translate-y-20', 'opacity-0');
+      setTimeout(() => t.classList.add('translate-y-20', 'opacity-0'), 3500);
+    }
 
-# -------------------------------------------------------------
-# Upload de Fotos dos Materiais (MinIO)
-# -------------------------------------------------------------
+    function fecharModais() { ['modal-login','modal-cadastro','modal-item'].forEach(id => document.getElementById(id).classList.add('hidden')); }
+    function mostrarLogin() { fecharModais(); document.getElementById('modal-login').classList.remove('hidden'); }
+    function mostrarCadastro() { fecharModais(); document.getElementById('modal-cadastro').classList.remove('hidden'); }
+    function abrirModalNovoItem() {
+      if (!localStorage.getItem('token')) { mostrarToast('Faça login para anunciar materiais.', 'aviso'); mostrarLogin(); return; }
+      fecharModais(); document.getElementById('modal-item').classList.remove('hidden');
+    }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharModais(); });
 
-@app.post("/api/itens/{item_id}/foto")
-async def upload_foto_item(
-    item_id: int,
-    arquivo: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user),
-):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        item = buscar_item(cursor, item_id)
-        user_id = exigir_dono_ou_admin(item, current_user, "alterar", "tentativa_upload_nao_autorizada")
+    function obterUsuarioLogadoId() {
+      try {
+        const u = JSON.parse(localStorage.getItem('usuario') || 'null');
+        if (u && u.usuario_id != null) return u.usuario_id;
+        const token = localStorage.getItem('token');
+        if (!token) return null;
+        let b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+        b64 += '='.repeat((4 - b64.length % 4) % 4);
+        const p = JSON.parse(atob(b64));
+        return p.usuario_id ?? p.id ?? p.sub ?? null;
+      } catch (e) { return null; }
+    }
+    const ehMeu = item => { const id = obterUsuarioLogadoId(); return id != null && String(item.usuario_id) === String(id); };
+    const abrirModalItem = abrirModalNovoItem;
 
-        foto_key = await upload_imagem_item(arquivo, item_id)
-        # imagem_url aponta para a rota abaixo, que lê a foto do bucket (privado) no MinIO.
-        cursor.execute(
-            "UPDATE itens_marketplace SET foto_key = %s, imagem_url = %s WHERE id = %s",
-            (foto_key, f"/api/fotos/{foto_key}", item_id),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    function renderizarMeusAnuncios() {
+      const c = document.getElementById('grid-meus-itens');
+      const meus = todosItens.filter(ehMeu);
+      if (!meus.length) {
+        c.innerHTML = `<div class="col-span-full py-16 text-center bg-white rounded-2xl border border-dashed border-gray-300"><span class="text-4xl block mb-2">📦</span><p class="text-gray-700 font-bold text-sm">Você ainda não anunciou nenhum material.</p><button onclick="abrirModalNovoItem()" class="mt-3 font-bold text-sm underline" style="color:var(--violet)">Criar o primeiro anúncio</button></div>`;
+        return;
+      }
+      c.innerHTML = meus.map(cardItem).join('');
+    }
 
-    emitir_evento_log("foto_item_enviada", user_id, {"item_id": item_id, "foto_key": foto_key})
-    return {"mensagem": "Foto enviada com sucesso", "foto_key": foto_key, "imagem_url": f"/api/fotos/{foto_key}"}
+    function mudarAba(aba) {
+      const mapa = { overview: 'aba-overview', vitrine: 'aba-vitrine', 'meus-anuncios': 'aba-meus-anuncios', mensagens: 'aba-mensagens', perfil: 'aba-perfil' };
+      Object.keys(mapa).forEach(k => {
+        document.getElementById(mapa[k]).classList.toggle('hidden', k !== aba);
+        document.getElementById('btn-menu-' + k).className = k === aba ? ativo : inativo;
+      });
+      if (aba === 'overview') renderizarGraficos();
+      if (aba === 'vitrine') renderizarVitrine();
+      if (aba === 'meus-anuncios') renderizarMeusAnuncios();
+      if (aba === 'mensagens') carregarConversas();
+    }
 
+    async function uploadFotoMinio(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const token = localStorage.getItem('token');
+      if (!token) return mostrarLogin();
+      mostrarToast('Enviando foto...', 'aviso');
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const res = await fetch(`${API_BASE}/api/perfil/foto`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Falha ao subir foto');
+        atualizarFotoAvatar(data.foto_url || URL.createObjectURL(file));
+        mostrarToast('Foto de perfil atualizada!');
+      } catch (err) {
+        atualizarFotoAvatar(URL.createObjectURL(file));
+        mostrarToast('Foto de perfil atualizada localmente!');
+      }
+    }
 
-@app.get("/api/fotos/{chave:path}")
-def servir_foto(chave: str):
-    try:
-        obj = baixar_imagem(chave)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Foto não encontrada.")
+    function atualizarFotoAvatar(url) {
+      if (!url) return;
+      if (!url.startsWith('blob:')) localStorage.setItem('usuario_foto', url);
+      [['sidebar-avatar-img','user-avatar-letra'],['perfil-avatar-img','perfil-avatar-letra']].forEach(([i, l]) => {
+        const img = document.getElementById(i); img.src = url; img.classList.remove('hidden');
+        document.getElementById(l).classList.add('hidden');
+      });
+    }
 
-    def fluxo():
-        try:
-            yield from obj.stream(32 * 1024)
-        finally:
-            obj.close()
-            obj.release_conn()
+    function atualizarEstadoVisual() {
+      const userRaw = localStorage.getItem('usuario');
+      const nav = document.getElementById('nav-actions');
+      const logado = !!userRaw;
+      document.getElementById('visao-publica').classList.toggle('hidden', logado);
+      document.getElementById('visao-autenticada').classList.toggle('hidden', !logado);
 
-    return StreamingResponse(fluxo(), media_type=obj.headers.get("Content-Type", "application/octet-stream"))
+      if (logado) {
+        const user = JSON.parse(userRaw);
+        const nome = user.nome || user.email.split('@')[0];
+        document.getElementById('user-display-name').textContent = nome;
+        document.getElementById('user-display-email').textContent = user.email;
+        document.getElementById('saudacao-user').textContent = `Bem-vindo de volta, ${nome}!`;
+        document.getElementById('user-avatar-letra').textContent = nome.charAt(0).toUpperCase();
+        document.getElementById('perfil-campo-nome').value = nome;
+        document.getElementById('perfil-campo-email').value = user.email;
+        document.getElementById('perfil-avatar-letra').textContent = nome.charAt(0).toUpperCase();
+        let foto = localStorage.getItem('usuario_foto');
+        if (foto && foto.startsWith('blob:')) { localStorage.removeItem('usuario_foto'); foto = null; }
+        if (foto) atualizarFotoAvatar(foto);
+        nav.innerHTML = `
+          <button onclick="abrirModalNovoItem()" class="hidden sm:flex btn-main !py-1.5 !px-3 text-xs !shadow-none items-center gap-1"><i class="fa-solid fa-plus"></i> Anunciar</button>
+          <button onclick="mudarAba('perfil')" class="flex items-center space-x-2 bg-gray-50 hover:bg-indigo-50 border border-gray-200 px-3 py-1.5 rounded-lg" title="Meu perfil">
+            <i class="fa-solid fa-user-graduate" style="color:var(--violet)"></i><span class="text-xs font-bold">${esc(nome)}</span>
+          </button>
+          <button onclick="fazerLogout()" aria-label="Sair" class="bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-600 p-2 rounded-lg text-xs" title="Sair"><i class="fa-solid fa-power-off"></i></button>`;
+        renderizarGraficos();
+      } else {
+        nav.innerHTML = `<button onclick="mostrarLogin()" class="text-white font-bold px-4 py-2 rounded-lg text-sm shadow" style="background:var(--violet)">Entrar</button>`;
+      }
+    }
+
+    function fazerLogout() {
+      localStorage.removeItem('token'); localStorage.removeItem('usuario');
+      atualizarEstadoVisual(); mostrarToast('Sessão encerrada com sucesso.');
+    }
+
+    async function realizarLogin(e) {
+      e.preventDefault();
+      const erroEl = document.getElementById('login-erro'); erroEl.classList.add('hidden');
+      const email = document.getElementById('login-email').value;
+      const senha = document.getElementById('login-senha').value;
+      try {
+        const res = await fetch(`${API_BASE}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, senha }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Falha de login');
+        localStorage.setItem('token', data.access_token);
+        localStorage.setItem('usuario', JSON.stringify({ nome: data.usuario_nome || email.split('@')[0], email, papel: data.papel, is_premium: data.is_premium, usuario_id: data.usuario_id }));
+        fecharModais(); atualizarEstadoVisual(); mudarAba('overview');
+        mostrarToast(`Bem-vindo, ${data.usuario_nome || email}!`);
+      } catch (err) { erroEl.textContent = err.message; erroEl.classList.remove('hidden'); }
+    }
+
+    async function realizarCadastro(e) {
+      e.preventDefault();
+      const erroEl = document.getElementById('cad-erro'); erroEl.classList.add('hidden');
+      const nome = document.getElementById('cad-nome').value, email = document.getElementById('cad-email').value, senha = document.getElementById('cad-senha').value;
+      try {
+        const res = await fetch(`${API_BASE}/api/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome, email, senha }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Erro ao registrar.');
+        fecharModais(); mostrarToast('Conta criada com sucesso! Faça login.'); mostrarLogin();
+      } catch (err) { erroEl.textContent = err.message; erroEl.classList.remove('hidden'); }
+    }
+
+    function previsualizarFotoItem(event) {
+      const file = event.target.files[0]; if (!file) return;
+      arquivoFotoItem = file;
+      document.getElementById('nome-arquivo-foto').textContent = file.name;
+      const reader = new FileReader();
+      reader.onload = ev => { document.getElementById('preview-foto-img').src = ev.target.result; document.getElementById('preview-foto-container').classList.remove('hidden'); };
+      reader.readAsDataURL(file);
+    }
+
+    async function cadastrarItem(e) {
+      e.preventDefault();
+      const token = localStorage.getItem('token');
+      const erroEl = document.getElementById('item-erro'); erroEl.classList.add('hidden');
+      if (!token) { erroEl.textContent = 'Sessão expirada. Faça login novamente.'; erroEl.classList.remove('hidden'); return; }
+      const preco = parseFloat(document.getElementById('item-preco').value.replace(',', '.')) || 0;
+      let imagem_url = null;
+      try {
+        const payload = {
+          titulo: document.getElementById('item-titulo').value.trim(),
+          descricao: document.getElementById('item-descricao').value.trim() || "Sem detalhes informados",
+          preco, modalidade: document.getElementById('item-modalidade').value,
+          condicao: document.getElementById('item-condicao').value || "semi-novo",
+          imagem_url, status: "disponivel", categoria_id: 1
+        };
+        const res = await fetch(`${API_BASE}/api/itens`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(payload) });
+        const data = await res.json();
+        if (!res.ok) {
+          let det = 'Erro ao cadastrar material.';
+          if (Array.isArray(data.detail)) det = data.detail.map(d => `${d.loc.slice(-1)}: ${d.msg}`).join(' | ');
+          else if (typeof data.detail === 'string') det = data.detail;
+          throw new Error(det);
+        }
+        let avisoFoto = null;
+        if (arquivoFotoItem && data.id) {
+          try {
+            const fd = new FormData(); fd.append('arquivo', await reduzirImagem(arquivoFotoItem), 'foto.jpg');
+            const up = await fetch(`${API_BASE}/api/itens/${data.id}/foto`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd });
+            if (!up.ok) { const e = await up.json().catch(() => ({})); avisoFoto = 'Anúncio criado, mas a foto falhou: ' + (e.detail || up.status); }
+          } catch (errFoto) { avisoFoto = 'Anúncio criado, mas a foto não foi enviada.'; }
+        }
+        arquivoFotoItem = null;
+        document.getElementById('nome-arquivo-foto').textContent = 'Nenhum arquivo selecionado';
+        document.getElementById('preview-foto-container').classList.add('hidden');
+        fecharModais(); carregarItens(); mudarAba('vitrine');
+        mostrarToast(avisoFoto || 'Material anunciado com sucesso!', avisoFoto ? 'aviso' : 'sucesso');
+      } catch (err) { erroEl.textContent = err.message; erroEl.classList.remove('hidden'); }
+    }
+
+    async function carregarItens() {
+      try {
+        const res = await fetch(`${API_BASE}/api/itens`);
+        const itens = await res.json();
+        todosItens = Array.isArray(itens) ? itens : [];
+        document.getElementById('kpi-total-campus').textContent = todosItens.length;
+        const total = todosItens.reduce((a, c) => a + (parseFloat(c.preco) || 0), 0);
+        document.getElementById('kpi-economia').textContent = `R$ ${total.toFixed(2).replace('.', ',')}`;
+        document.getElementById('kpi-meus-itens').textContent = todosItens.filter(ehMeu).length;
+        renderizarVitrine();
+        if (localStorage.getItem('token')) renderizarGraficos();
+      } catch (err) { console.error('Erro ao buscar itens:', err); }
+    }
+
+    function filtrarVitrine(tipo) {
+      filtroAtualVitrine = tipo;
+      ['todos','venda','troca','doacao'].forEach(b => {
+        document.getElementById(`btn-filtro-${b}`).className = "px-3 py-1.5 rounded-lg font-bold " + (b === tipo ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200");
+      });
+      renderizarVitrine();
+    }
+
+    function cardItem(item) {
+      const cores = { venda: 'bg-blue-100 text-blue-800', doacao: 'bg-green-100 text-green-800', troca: 'bg-yellow-100 text-yellow-800', emprestimo: 'bg-purple-100 text-purple-800' };
+      const mod = (item.modalidade || 'venda').toLowerCase();
+      const preco = Number(item.preco) > 0 ? `R$ ${Number(item.preco).toFixed(2).replace('.', ',')}` : 'Grátis';
+      const meu = ehMeu(item);
+      const acao = meu
+        ? `<span class="block text-center font-bold py-2 rounded-xl text-xs bg-indigo-50 text-indigo-700 border border-indigo-200"><i class="fa-solid fa-user-check mr-1"></i> Seu anúncio</span>`
+        : `<button onclick="demonstrarInteresse(${item.id})" class="w-full font-bold py-2 rounded-xl text-xs border border-gray-200 hover:text-white transition" style="color:var(--violet-d)" onmouseover="this.style.background='var(--violet)'" onmouseout="this.style.background=''">Tenho interesse</button>`;
+      const capa = item.imagem_url
+        ? `<img src="${esc(item.imagem_url)}" alt="${esc(item.titulo)}" class="w-full h-full object-cover">`
+        : `<span class="text-4xl opacity-75">📚</span>`;
+      return `
+        <div class="card-item bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col justify-between">
+          <div class="h-36 bg-gray-50 flex items-center justify-center relative border-b border-gray-100 overflow-hidden">
+            ${capa}
+            <span class="absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-xs font-bold ${cores[mod] || cores.venda}">${esc(mod)}</span>
+            <span class="absolute bottom-3 right-3 bg-white px-2 py-1 rounded-md text-xs font-black shadow">${preco}</span>
+          </div>
+          <div class="p-4 flex-1 flex flex-col justify-between">
+            <div><h4 class="font-bold text-base line-clamp-1 mb-1">${esc(item.titulo)}</h4><p class="text-xs text-gray-500 line-clamp-2 mb-3">${esc(item.descricao || 'Sem detalhes informados.')}</p></div>
+            ${acao}
+          </div>
+        </div>`;
+    }
+
+    function renderizarVitrine(lista) {
+      const container = document.getElementById('grid-vitrine');
+      let itens = lista || todosItens.filter(i => filtroAtualVitrine === 'todos' || (i.modalidade || '').toLowerCase() === filtroAtualVitrine);
+      if (!itens.length) {
+        container.innerHTML = `<div class="col-span-full py-16 text-center bg-white rounded-2xl border border-gray-200"><span class="text-4xl block mb-2">🔍</span><p class="text-gray-600 font-bold text-sm">Nenhum anúncio por aqui ainda.</p><button onclick="abrirModalNovoItem()" class="mt-3 font-bold text-sm underline" style="color:var(--violet)">Publique o primeiro</button></div>`;
+        return;
+      }
+      container.innerHTML = itens.map(cardItem).join('');
+    }
+
+    function filtrarItensNavbar() {
+      const termo = document.getElementById('campo-busca-nav').value.toLowerCase();
+      if (!localStorage.getItem('token')) return;
+      mudarAba('vitrine');
+      renderizarVitrine(todosItens.filter(i => (i.titulo || '').toLowerCase().includes(termo) || (i.descricao || '').toLowerCase().includes(termo)));
+    }
+
+    function renderizarGraficos() {
+      const diaLabels = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }); });
+      const a = document.getElementById('graficoAtividade');
+      if (a) {
+        if (chartAtividade) chartAtividade.destroy();
+        chartAtividade = new Chart(a, { type: 'bar',
+          data: { labels: diaLabels, datasets: [{ label: 'Interações', data: [12, 19, 8, 15, 22, 14, todosItens.length + 5], backgroundColor: '#5b4bdb', borderRadius: 8 }] },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } } });
+      }
+      const m = document.getElementById('graficoModalidades');
+      if (m) {
+        if (chartModalidades) chartModalidades.destroy();
+        const c = { venda: 0, troca: 0, doacao: 0, emprestimo: 0 };
+        todosItens.forEach(it => { const k = (it.modalidade || 'venda').toLowerCase(); c[k] !== undefined ? c[k]++ : c.venda++; });
+        chartModalidades = new Chart(m, { type: 'doughnut',
+          data: { labels: ['Venda', 'Troca', 'Doação', 'Empréstimo'], datasets: [{ data: [c.venda || 4, c.troca || 2, c.doacao || 3, c.emprestimo || 1], backgroundColor: ['#5b4bdb', '#f59e0b', '#84cc16', '#ff6b57'], borderWidth: 0 }] },
+          options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } } });
+      }
+    }
+
+    // ===== Foto: reduz para no máximo 1280 px (evita o limite de 5 MB) =====
+    function reduzirImagem(file, max = 1280) {
+      return new Promise(resolve => {
+        const img = new Image(), url = URL.createObjectURL(file);
+        img.onload = () => {
+          const k = Math.min(1, max / Math.max(img.width, img.height));
+          const c = document.createElement('canvas'); c.width = img.width * k; c.height = img.height * k;
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          c.toBlob(b => { URL.revokeObjectURL(url); resolve(b || file); }, 'image/jpeg', 0.82);
+        };
+        img.onerror = () => resolve(file);
+        img.src = url;
+      });
+    }
+
+    // ===== Interesse, chat e pagamento =====
+    let conversaAberta = null, ultimoMsgId = 0, naoLidasAntes = 0, conversasCache = [];
+    const authH = () => ({ 'Authorization': `Bearer ${localStorage.getItem('token')}`, 'Content-Type': 'application/json' });
+
+    async function demonstrarInteresse(itemId) {
+      if (!localStorage.getItem('token')) { mostrarToast('Faça login para falar com o anunciante.', 'aviso'); return mostrarLogin(); }
+      try {
+        const res = await fetch(`${API_BASE}/api/itens/${itemId}/interesse`, { method: 'POST', headers: authH() });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.detail || 'Não foi possível enviar.');
+        mostrarToast(d.criada ? 'Anunciante notificado! Conversa aberta.' : 'Você já tem uma conversa neste anúncio.');
+        mudarAba('mensagens');
+        abrirConversa(d.conversa_id);
+      } catch (e) { mostrarToast(e.message, 'aviso'); }
+    }
+
+    async function carregarConversas() {
+      const lista = document.getElementById('lista-conversas');
+      try {
+        const res = await fetch(`${API_BASE}/api/conversas`, { headers: authH() });
+        conversasCache = await res.json();
+        lista.innerHTML = conversasCache.length ? conversasCache.map(c => `
+          <button onclick="abrirConversa(${c.id})" class="w-full text-left p-3 rounded-xl hover:bg-gray-50 ${c.id === conversaAberta ? 'bg-indigo-50' : ''}">
+            <div class="flex justify-between gap-2"><b class="text-sm truncate">${esc(c.titulo)}</b>${c.nao_lidas ? `<span class="bg-red-500 text-white text-[10px] font-black px-1.5 rounded-full">${c.nao_lidas}</span>` : ''}</div>
+            <p class="text-xs text-gray-500 truncate">${esc(c.outro_nome)} · ${esc(c.ultima || '')}</p>
+          </button>`).join('') : '<p class="text-xs text-gray-500 p-3">Nenhuma conversa ainda. Toque em “Tenho interesse” em um anúncio.</p>';
+      } catch (e) { lista.innerHTML = '<p class="text-xs text-red-500 p-3">Erro ao carregar conversas.</p>'; }
+    }
+
+    async function abrirConversa(id) {
+      conversaAberta = id; ultimoMsgId = 0;
+      document.getElementById('chat-msgs').innerHTML = '';
+      await carregarConversas();
+      const c = conversasCache.find(x => x.id === id);
+      if (!c) return;
+      document.getElementById('chat-topo').innerHTML = `<b class="text-gray-900">${esc(c.titulo)}</b> · conversa com ${esc(c.outro_nome)}`;
+      const comprador = c.meu_papel === 'interessado';
+      const p = document.getElementById('chat-pagto');
+      p.className = 'px-4 py-2 text-xs ' + (c.pagamento === 'stripe' ? 'bg-indigo-50 text-indigo-800' : 'bg-amber-50 text-amber-800');
+      p.innerHTML = c.pagamento === 'stripe'
+        ? `🔒 Anúncio Premium: o pagamento é intermediado pela Stripe.${comprador ? ' <button onclick="pagarComStripe()" class="ml-2 font-bold underline">Pagar com Stripe</button>' : ''}`
+        : '🤝 Plano comum: o pagamento é combinado diretamente entre vocês, sem intermediário. A CampuSwap não participa da transação.';
+      document.getElementById('chat-form').classList.remove('hidden');
+      await atualizarMensagens();
+    }
+
+    async function atualizarMensagens() {
+      if (!conversaAberta) return;
+      const res = await fetch(`${API_BASE}/api/conversas/${conversaAberta}/mensagens?depois_de=${ultimoMsgId}`, { headers: authH() });
+      if (!res.ok) return;
+      const { mensagens } = await res.json();
+      if (!mensagens.length) return;
+      const box = document.getElementById('chat-msgs');
+      box.insertAdjacentHTML('beforeend', mensagens.map(m => `<div class="flex ${m.minha ? 'justify-end' : ''}"><div class="max-w-[75%] px-3 py-2 rounded-2xl text-sm ${m.minha ? 'text-white' : 'bg-white border border-gray-200'}" ${m.minha ? 'style="background:var(--violet)"' : ''}>${esc(m.texto)}</div></div>`).join(''));
+      ultimoMsgId = mensagens[mensagens.length - 1].id;
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function enviarMensagem() {
+      const inp = document.getElementById('chat-texto'), texto = inp.value.trim();
+      if (!texto || !conversaAberta) return;
+      const res = await fetch(`${API_BASE}/api/conversas/${conversaAberta}/mensagens`, { method: 'POST', headers: authH(), body: JSON.stringify({ texto }) });
+      if (res.ok) { inp.value = ''; atualizarMensagens(); } else mostrarToast('Não foi possível enviar a mensagem.', 'aviso');
+    }
+
+    async function pagarComStripe() {
+      try {
+        const res = await fetch(`${API_BASE}/api/conversas/${conversaAberta}/pagar`, { method: 'POST', headers: authH() });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.detail || 'Falha ao iniciar o pagamento.');
+        window.location.href = d.url;
+      } catch (e) { mostrarToast(e.message, 'aviso'); }
+    }
+
+    // Notificação: consulta mensagens não lidas a cada 8 s
+    async function verificarMensagens() {
+      if (!localStorage.getItem('token')) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/conversas/nao-lidas`, { headers: authH() });
+        if (!res.ok) return;
+        const { nao_lidas } = await res.json();
+        const b = document.getElementById('badge-msgs');
+        b.textContent = nao_lidas; b.classList.toggle('hidden', !nao_lidas);
+        const noChat = !document.getElementById('aba-mensagens').classList.contains('hidden');
+        if (nao_lidas > naoLidasAntes && !noChat) mostrarToast('Você recebeu uma nova mensagem.');
+        naoLidasAntes = nao_lidas;
+        if (noChat) { atualizarMensagens(); carregarConversas(); }
+      } catch (e) { /* sem rede: tenta no próximo ciclo */ }
+    }
+
+    async function iniciarCheckoutStripe() {
+      const token = localStorage.getItem('token');
+      if (!token) return mostrarLogin();
+      try {
+        mostrarToast('Gerando sessão segura no Stripe...', 'aviso');
+        const res = await fetch(`${API_BASE}/api/checkout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        if (data.url) window.location.href = data.url; else mostrarToast('Serviço de pagamento em modo simulação.');
+      } catch (e) { mostrarToast('Erro ao iniciar checkout.', 'aviso'); }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      calcularEconomia(); atualizarEstadoVisual(); carregarItens();
+      if (new URLSearchParams(location.search).get('pagamento') === 'ok') mostrarToast('Pagamento concluído na Stripe!');
+      verificarMensagens(); setInterval(verificarMensagens, 8000);
+    });
+  </script>
+</body>
+</html>
