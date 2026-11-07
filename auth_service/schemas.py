@@ -1,13 +1,15 @@
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, EmailStr
+from typing import Optional, Literal
+from pydantic import BaseModel, EmailStr, Field
 
+# 3 papéis específicos do CampuSwap
+PapeisCampuSwap = Literal["aluno", "moderador", "admin"]
 
 class UsuarioCriar(BaseModel):
     nome: str
     email: EmailStr
     senha: str
-    papel: Optional[str] = "usuario"
+    papel: Optional[PapeisCampuSwap] = "aluno"
 
 
 class LoginRequest(BaseModel):
@@ -24,19 +26,17 @@ class RedefinirSenhaRequest(BaseModel):
     nova_senha: str
 
 
-# Schema de retorno de dados do utilizador com suporte a Premium
 class UsuarioResponse(BaseModel):
     id: int
     nome: str
     email: EmailStr
     papel: str
-    is_premium: bool  # Informa se o utilizador possui o plano ativo[cite: 6]
+    is_premium: bool
     stripe_customer_id: Optional[str] = None
 
     class Config:
-        from_attributes = True  # Compatível com Pydantic v2 (se usares v1, usa: orm_mode = True)
+        from_attributes = True
 
 
-# Schema de retorno para a rota de checkout
 class CheckoutResponse(BaseModel):
-    url: str  # URL de redirecionamento gerada pelo Stripe[cite: 5, 6]
+    url: str

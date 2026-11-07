@@ -1,6 +1,29 @@
 version: '3.8'
 
 services:
+  mariadb:
+    image: mariadb:10.11
+    container_name: gabriel_mariadb
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=fatec_root_2026
+      - MYSQL_DATABASE=campuswap_db
+      - MYSQL_USER=campuswap_user
+      - MYSQL_PASSWORD=campuswap_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - gabriel_mariadb_data:/var/lib/mysql
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - campuswap_net
+
   redis:
     image: redis:7-alpine
     container_name: gabriel_redis
@@ -11,7 +34,7 @@ services:
       timeout: 3s
       retries: 3
     networks:
-      - tom_hanks_net
+      - campuswap_net
 
   log_service:
     build:
@@ -32,7 +55,7 @@ services:
     depends_on:
       - redis
     networks:
-      - tom_hanks_net
+      - campuswap_net
 
   auth_service:
     build:
@@ -43,7 +66,7 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - DATABASE_URL=sqlite:////app/auth.db
+      - DATABASE_URL=mysql+pymysql://campuswap_user:campuswap_pass@mariadb:3306/campuswap_db
       - JWT_SECRET=chave_super_secreta_jwt_padrao
       - LOG_SERVICE_URL=http://log_service:6000
       - MAILTRAP_HOST=sandbox.smtp.mailtrap.io
@@ -60,9 +83,12 @@ services:
       retries: 3
       start_period: 15s
     depends_on:
-      - log_service
+      mariadb:
+        condition: service_healthy
+      log_service:
+        condition: service_started
     networks:
-      - tom_hanks_net
+      - campuswap_net
 
   minio:
     image: minio/minio:RELEASE.2024-01-18T22-51-28Z
@@ -78,20 +104,20 @@ services:
     volumes:
       - gabriel_minio_data:/data
     networks:
-      - tom_hanks_net
+      - campuswap_net
 
   catalogo_service:
     build:
       context: https://github.com/Gabriel33-fis/campuswap.git#main:catalogo_service
     container_name: gabriel_catalogo_service
     restart: always
-    command: sh -c "pip install requests redis prometheus-fastapi-instrumentator minio python-multipart && uvicorn main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "pip install requests pymysql redis prometheus-fastapi-instrumentator minio python-multipart && uvicorn main:app --host 0.0.0.0 --port 8000"
     ports:
       - "8207:8000"
     environment:
       - AUTH_SERVICE_URL=http://auth_service:5000
       - LOG_SERVICE_URL=http://log_service:6000
-      - DATABASE_URL=sqlite:////app/catalogo.db
+      - DATABASE_URL=mysql+pymysql://campuswap_user:campuswap_pass@mariadb:3306/campuswap_db
       - JWT_SECRET=chave_super_secreta_jwt_padrao
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -106,16 +132,23 @@ services:
       retries: 3
       start_period: 25s
     depends_on:
-      - auth_service
-      - log_service
-      - minio
-      - redis
+      mariadb:
+        condition: service_healthy
+      auth_service:
+        condition: service_started
+      log_service:
+        condition: service_started
+      minio:
+        condition: service_started
+      redis:
+        condition: service_started
     networks:
-      - tom_hanks_net
+      - campuswap_net
 
 volumes:
   gabriel_minio_data:
+  gabriel_mariadb_data:
 
 networks:
-  tom_hanks_net:
+  campuswap_net:
     driver: bridge

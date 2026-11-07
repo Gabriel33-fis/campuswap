@@ -9,7 +9,9 @@ class Usuario(Base):
     nome = Column(String(100), nullable=False)
     email = Column(String(150), unique=True, index=True, nullable=False)
     senha_hash = Column(String(255), nullable=False)
-    papel = Column(String(50), default="usuario")
+    
+    # 3 Papéis do negócio: 'aluno', 'moderador' e 'admin'
+    papel = Column(String(50), default="aluno", nullable=False)
     
     # Campos para o Plano Premium (Stripe)
     is_premium = Column(Boolean, default=False, nullable=False)
