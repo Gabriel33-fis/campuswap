@@ -2,9 +2,9 @@
 
 Atividade desenvolvida para a disciplina de Introdução à Computação em Nuvem (ISW055), sob orientação do professor [siriani](https://github.com/siriani).
 
-> **🌐 Sistema no ar:** **[https://SEU-SUBDOMINIO.exemplo.com.br](https://SEU-SUBDOMINIO.exemplo.com.br)**
-> **📚 Documentação da API (Swagger):** `https://gabriel-graciano-isw055.lapps.studio/docs`
-> **🧾 Issue de entrega:** ["Entrega — Seu negócio no ar"](https://github.com/Gabriel33-fis/campuswap/issues/
+> **🌐 Sistema no ar:** **[PREENCHER: https://SEU-SUBDOMINIO.exemplo.com.br](https://SEU-SUBDOMINIO.exemplo.com.br)**
+> **📚 Documentação da API (Swagger):** `https://SEU-SUBDOMINIO.exemplo.com.br/docs`
+> **🧾 Issue de entrega:** [PREENCHER: link da issue "Entrega — Seu negócio no ar"](https://github.com/SEU-USUARIO/SEU-REPOSITORIO/issues)
 
 ---
 
@@ -82,6 +82,15 @@ O CampuSwap opera em modelo **Freemium** monetizado via **Stripe**:
   * Destaque visual dos anúncios na página inicial do catálogo.
   * Acesso liberado às modalidades de **Troca Direta (Swap)** e alertas de busca prioritária para livros concorridos.
 
+### Contato e pagamento entre as partes
+
+Ao tocar em **"Tenho interesse"**, o anunciante é notificado (selo de mensagens não lidas e aviso na tela) e uma conversa é criada para os dois combinarem a negociação. O pagamento depende do plano:
+
+| Plano | Como o pagamento acontece |
+| :--- | :--- |
+| **Comum** | Combinado diretamente entre comprador e vendedor, **sem intermediário**. A CampuSwap não participa da transação. |
+| **Premium** | O comprador paga pela **Stripe** (Checkout), que atua como intermediária. |
+
 ---
 
 ## 7. Métricas de Sucesso
@@ -124,11 +133,12 @@ flowchart LR
     C -->|SQL| DB[("Banco de dados<br/>itens_marketplace")]
     A -->|SQL| DBU[("Banco de dados<br/>usuários")]
     C -->|"RPUSH eventos_negocio"| R[("Redis")]
-    R -->|consumo| L["Log de eventos<br/>de negócio"]
+    R -->|consumo| L["log_service<br/>registra os eventos de negócio"]
     C -->|"upload de fotos (S3)"| M[("MinIO")]
 
     PT["Portainer<br/>(stack e healthchecks)"] -.->|gerencia| C
     PT -.-> A
+    PT -.-> L
     PT -.-> R
     PT -.-> M
 ```
@@ -141,7 +151,8 @@ flowchart LR
 | :--- | :--- | :--- |
 | **catalogo_service** (FastAPI) | Catálogo de materiais, CRUD com isolamento por usuário, moderação, estatísticas de admin, upload de fotos, entrega do front-end | auth_service, banco, Redis, MinIO |
 | **auth_service** | Cadastro, login, emissão do JWT com o papel do usuário e checkout do Plano Pro | Stripe, banco de usuários |
-| **Redis** | Fila de eventos de negócio (lista `eventos_negocio`) para auditoria | catalogo_service, log de eventos |
+| **log_service** | Consome os eventos de negócio da fila do Redis e os registra no log | Redis |
+| **Redis** | Fila de eventos de negócio (lista `eventos_negocio`) para auditoria | catalogo_service, log_service |
 | **MinIO** | Armazenamento S3 das fotos de produtos e de perfil | catalogo_service |
 | **Stripe** | Cobrança recorrente do Plano Estudante Pro | auth_service |
 | **Portainer** | Deploy da stack e monitoramento de saúde dos containers | todos os containers |
@@ -184,6 +195,10 @@ sequenceDiagram
 | `PUT /api/itens/{id}` | dono, moderador ou admin | Edita anúncio. Outros usuários recebem **403** |
 | `DELETE /api/itens/{id}` | dono, moderador ou admin | Remove anúncio. Outros usuários recebem **403** |
 | `POST /api/itens/{id}/foto` | dono, moderador ou admin | Envia a foto do item para o MinIO |
+| `POST /api/itens/{id}/interesse` | autenticado | Notifica o anunciante e abre (ou reaproveita) a conversa com o interessado |
+| `GET /api/conversas`, `GET /api/conversas/nao-lidas` | autenticado | Conversas do usuário e contador de mensagens não lidas |
+| `GET/POST /api/conversas/{id}/mensagens` | participantes da conversa | Lê e envia mensagens. Quem não participa recebe **403** |
+| `POST /api/conversas/{id}/pagar` | comprador, anúncio premium | Cria a sessão de pagamento na Stripe |
 | `PATCH /api/itens/{id}/moderar` | moderador ou admin | Aprova ou suspende um anúncio |
 | `GET /api/admin/estatisticas` | admin | Totais de itens por status |
 
@@ -221,11 +236,15 @@ Cada ação relevante grava um evento JSON na lista `eventos_negocio` do Redis, 
 | `item_removido` | Um anúncio é excluído |
 | `item_moderado` | Um moderador aprova ou suspende um anúncio |
 | `foto_item_enviada` | Uma foto é enviada ao MinIO |
+| `interesse_registrado` | Um estudante demonstra interesse e a conversa é aberta |
+| `mensagem_enviada` | Uma mensagem é enviada no chat |
+| `pagamento_stripe_iniciado` | O comprador inicia o pagamento pela Stripe (anúncio premium) |
+| `tentativa_acesso_conversa_nao_autorizada` | Alguém tenta ler ou escrever numa conversa da qual não participa |
 | `tentativa_edicao_nao_autorizada` | Alguém tenta editar o anúncio de outro usuário |
 | `tentativa_remocao_nao_autorizada` | Alguém tenta remover o anúncio de outro usuário |
 | `tentativa_upload_nao_autorizada` | Alguém tenta enviar foto para o anúncio de outro usuário |
 
-Para consultar os eventos:
+Os eventos são consumidos e registrados pelo `log_service`. Para consultá-los, veja os logs desse container (no Portainer: Containers > log_service > Logs) ou, enquanto ainda estiverem na fila:
 
 ```bash
 docker exec -it <container-redis> redis-cli LRANGE eventos_negocio 0 -1
@@ -270,7 +289,7 @@ A tabela principal é `itens_marketplace`, com as colunas: `id`, `usuario_id`, `
 **Pré-requisitos:** Docker e Docker Compose.
 
 ```bash
-git clone https://github.com/Gabriel33-fis/campuswap
+git clone https://github.com/SEU-USUARIO/SEU-REPOSITORIO.git
 cd SEU-REPOSITORIO
 cp .env.example .env        # preencha as variáveis
 docker compose up -d --build
@@ -301,7 +320,7 @@ Prints armazenados em `docs/prints/`. A data e a hora da issue de entrega també
 | 2 | Listagem do recurso principal (vitrine de materiais) | ![Listagem](docs/prints/02-listagem.png) |
 | 3 | `403` para um papel sem permissão (aluno chamando rota de moderador ou admin) | ![403 por papel](docs/prints/03-403-papel.png) |
 | 4 | Bloqueio ao tentar abrir/alterar o registro de outro usuário (`403`) | ![Bloqueio de registro alheio](docs/prints/04-bloqueio-registro.png) |
-| 5 | Eventos de negócio no log | ![Eventos no log](docs/prints/05-eventos-log.png) |
+| 5 | Eventos de negócio no log (container `log_service`) | ![Eventos no log](docs/prints/05-eventos-log.png) |
 | 6 | Arquivo armazenado no MinIO | ![Arquivo no MinIO](docs/prints/06-minio.png) |
 | 7 | Stack no Portainer com os containers saudáveis | ![Stack no Portainer](docs/prints/07-portainer.png) |
 
