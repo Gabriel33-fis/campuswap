@@ -1,3 +1,5 @@
+# Nenhum segredo fica neste arquivo: os valores vêm do .env (local) ou das
+# "Environment variables" da stack no Portainer. Veja o .env.example.
 version: '3.8'
 
 services:
@@ -6,23 +8,20 @@ services:
     container_name: gabriel_mariadb
     restart: always
     environment:
-      - MYSQL_ROOT_PASSWORD=fatec_root_2026
-      - MYSQL_DATABASE=campuswap_db
-      - MYSQL_USER=campuswap_user
-      - MYSQL_PASSWORD=campuswap_pass
-    ports:
-      - "3306:3306"
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-campuswap_db}
+      - MYSQL_USER=${MYSQL_USER:-campuswap_user}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
     volumes:
       - gabriel_mariadb_data:/var/lib/mysql
-      - ./db:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "${MYSQL_USER:-campuswap_user}", "-p${MYSQL_PASSWORD}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 3
       start_period: 20s
     networks:
-      - campuswap_net
+      - tom_hanks_net
 
   redis:
     image: redis:7-alpine
@@ -34,7 +33,7 @@ services:
       timeout: 3s
       retries: 3
     networks:
-      - campuswap_net
+      - tom_hanks_net
 
   log_service:
     build:
@@ -45,7 +44,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - JWT_SECRET=chave_super_secreta_jwt_padrao
+      - JWT_SECRET=${JWT_SECRET}
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:6000/health')\" || exit 1"]
       interval: 10s
@@ -55,7 +54,7 @@ services:
     depends_on:
       - redis
     networks:
-      - campuswap_net
+      - tom_hanks_net
 
   auth_service:
     build:
@@ -66,13 +65,13 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - DATABASE_URL=mysql+pymysql://campuswap_user:campuswap_pass@mariadb:3306/campuswap_db
-      - JWT_SECRET=chave_super_secreta_jwt_padrao
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-campuswap_user}:${MYSQL_PASSWORD}@mariadb:3306/${MYSQL_DATABASE:-campuswap_db}
+      - JWT_SECRET=${JWT_SECRET}
       - LOG_SERVICE_URL=http://log_service:6000
       - MAILTRAP_HOST=sandbox.smtp.mailtrap.io
       - MAILTRAP_PORT=2525
-      - MAILTRAP_USER=891b6bf689d033
-      - MAILTRAP_PASS=a6056f6ec19f20
+      - MAILTRAP_USER=${MAILTRAP_USER}
+      - MAILTRAP_PASS=${MAILTRAP_PASS}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - STRIPE_PRICE_ID=${STRIPE_PRICE_ID}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
@@ -81,50 +80,52 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 20s
     depends_on:
-      mariadb:
-        condition: service_healthy
-      log_service:
-        condition: service_started
+      - mariadb
+      - log_service
     networks:
-      - campuswap_net
+      - tom_hanks_net
 
   minio:
-    image: minio/minio:RELEASE.2024-01-18T22-51-28Z
+    image: minio/minio:latest
     container_name: gabriel_minio
     restart: always
     command: server /data --console-address ":9001"
-    environment:
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=miniopassword123
     ports:
       - "9000:9000"
       - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
     volumes:
       - gabriel_minio_data:/data
     networks:
-      - campuswap_net
+      - tom_hanks_net
 
   catalogo_service:
     build:
       context: https://github.com/Gabriel33-fis/campuswap.git#main:catalogo_service
+      no_cache: true
     container_name: gabriel_catalogo_service
     restart: always
-    command: sh -c "pip install requests pymysql redis prometheus-fastapi-instrumentator minio python-multipart && uvicorn main:app --host 0.0.0.0 --port 8000"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
     ports:
       - "8207:8000"
     environment:
       - AUTH_SERVICE_URL=http://auth_service:5000
       - LOG_SERVICE_URL=http://log_service:6000
-      - DATABASE_URL=mysql+pymysql://campuswap_user:campuswap_pass@mariadb:3306/campuswap_db
-      - JWT_SECRET=chave_super_secreta_jwt_padrao
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-campuswap_user}:${MYSQL_PASSWORD}@mariadb:3306/${MYSQL_DATABASE:-campuswap_db}
+      - JWT_SECRET=${JWT_SECRET}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=miniopassword123
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
       - MINIO_BUCKET_NAME=campuswap-fotos
+      - MINIO_SECURE=false
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://gabriel-graciano-isw055.lapps.studio}
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
       interval: 10s
@@ -132,23 +133,16 @@ services:
       retries: 3
       start_period: 25s
     depends_on:
-      mariadb:
-        condition: service_healthy
-      auth_service:
-        condition: service_started
-      log_service:
-        condition: service_started
-      minio:
-        condition: service_started
-      redis:
-        condition: service_started
+      - mariadb
+      - redis
+      - minio
     networks:
-      - campuswap_net
+      - tom_hanks_net
 
 volumes:
   gabriel_minio_data:
   gabriel_mariadb_data:
 
 networks:
-  campuswap_net:
+  tom_hanks_net:
     driver: bridge

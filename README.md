@@ -130,8 +130,8 @@ flowchart LR
     A -->|Checkout| S[("Stripe")]
     S -.->|Webhook| A
 
-    C -->|SQL| DB[("Banco de dados<br/>itens_marketplace")]
-    A -->|SQL| DBU[("Banco de dados<br/>usuários")]
+    C -->|SQL| DB[("MariaDB<br/>campuswap_db")]
+    A -->|SQL| DB
     C -->|"RPUSH eventos_negocio"| R[("Redis")]
     R -->|consumo| L["log_service<br/>registra os eventos de negócio"]
     C -->|"upload de fotos (S3)"| M[("MinIO")]
@@ -302,7 +302,12 @@ docker compose up -d --build
 | `AUTH_SERVICE_URL` | `http://auth_service:5000` | Endereço do serviço de autenticação |
 | `REDIS_HOST` | `redis` | Host do Redis |
 | `REDIS_PORT` | `6379` | Porta do Redis |
-| **[PREENCHER]** | | Credenciais do MinIO, chaves da Stripe e segredo do JWT |
+| `DATABASE_URL` | | Conexão com o MariaDB |
+| `JWT_SECRET` | | Segredo compartilhado para validar o JWT |
+| `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` | | Acesso ao MinIO |
+| `MINIO_BUCKET_NAME` | `campuswap-fotos` | Bucket das fotos |
+| `STRIPE_SECRET_KEY` | | Chave da Stripe para o pagamento de anúncios premium |
+| `PUBLIC_BASE_URL` | | URL pública do sistema (retorno do checkout) |
 
 > Nunca versione o arquivo `.env`. Mantenha apenas o `.env.example` sem valores reais.
 
