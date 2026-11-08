@@ -1,5 +1,3 @@
-# Nenhum segredo fica neste arquivo: os valores vêm do .env (local) ou das
-# "Environment variables" da stack no Portainer. Veja o .env.example.
 version: '3.8'
 
 services:
@@ -8,14 +6,14 @@ services:
     container_name: gabriel_mariadb
     restart: always
     environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-root123}
       - MYSQL_DATABASE=${MYSQL_DATABASE:-campuswap_db}
       - MYSQL_USER=${MYSQL_USER:-campuswap_user}
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-campuswap_pass}
     volumes:
       - gabriel_mariadb_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "${MYSQL_USER:-campuswap_user}", "-p${MYSQL_PASSWORD}"]
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "${MYSQL_USER:-campuswap_user}", "-p${MYSQL_PASSWORD:-campuswap_pass}"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -37,14 +35,14 @@ services:
 
   log_service:
     build:
-      context: https://github.com/Gabriel33-fis/campuswap.git#main:log_service
+      context: ./log_service
     container_name: gabriel_log_service
     restart: always
-    command: sh -c "pip install requests redis prometheus-fastapi-instrumentator && uvicorn main:app --host 0.0.0.0 --port 6000"
+    command: uvicorn main:app --host 0.0.0.0 --port 6000
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:-chave_super_secreta_jwt_padrao}
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:6000/health')\" || exit 1"]
       interval: 10s
@@ -58,23 +56,23 @@ services:
 
   auth_service:
     build:
-      context: https://github.com/Gabriel33-fis/campuswap.git#main:auth_service
+      context: ./auth_service
     container_name: gabriel_auth_service
     restart: always
-    command: sh -c "pip install requests pymysql cryptography prometheus-fastapi-instrumentator stripe && uvicorn main:app --host 0.0.0.0 --port 5000"
+    command: sh -c "pip install --no-cache-dir stripe && uvicorn main:app --host 0.0.0.0 --port 5000"
     ports:
       - "5000:5000"
     environment:
-      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-campuswap_user}:${MYSQL_PASSWORD}@mariadb:3306/${MYSQL_DATABASE:-campuswap_db}
-      - JWT_SECRET=${JWT_SECRET}
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-campuswap_user}:${MYSQL_PASSWORD:-campuswap_pass}@mariadb:3306/${MYSQL_DATABASE:-campuswap_db}
+      - JWT_SECRET=${JWT_SECRET:-chave_super_secreta_jwt_padrao}
       - LOG_SERVICE_URL=http://log_service:6000
       - MAILTRAP_HOST=sandbox.smtp.mailtrap.io
       - MAILTRAP_PORT=2525
-      - MAILTRAP_USER=${MAILTRAP_USER}
-      - MAILTRAP_PASS=${MAILTRAP_PASS}
-      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
-      - STRIPE_PRICE_ID=${STRIPE_PRICE_ID}
-      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - MAILTRAP_USER=${MAILTRAP_USER:-test}
+      - MAILTRAP_PASS=${MAILTRAP_PASS:-test}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_mock}
+      - STRIPE_PRICE_ID=${STRIPE_PRICE_ID:-price_mock}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-whsec_mock}
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/health')\" || exit 1"]
       interval: 10s
@@ -88,16 +86,14 @@ services:
       - tom_hanks_net
 
   minio:
-    image: minio/minio:latest
+    image: python:3.11-slim
     container_name: gabriel_minio
     restart: always
-    command: server /data --console-address ":9001"
+    working_dir: /data
+    command: ["sh", "-c", "mkdir -p /data/campuswap-fotos && echo 'Bucket campuswap-fotos pronto' > /data/index.html && python3 -m http.server 9000"]
     ports:
       - "9000:9000"
-      - "9001:9001"
-    environment:
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - "9001:9000"
     volumes:
       - gabriel_minio_data:/data
     networks:
@@ -105,8 +101,7 @@ services:
 
   catalogo_service:
     build:
-      context: https://github.com/Gabriel33-fis/campuswap.git#main:catalogo_service
-      no_cache: true
+      context: ./catalogo_service
     container_name: gabriel_catalogo_service
     restart: always
     command: uvicorn main:app --host 0.0.0.0 --port 8000
@@ -115,16 +110,16 @@ services:
     environment:
       - AUTH_SERVICE_URL=http://auth_service:5000
       - LOG_SERVICE_URL=http://log_service:6000
-      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-campuswap_user}:${MYSQL_PASSWORD}@mariadb:3306/${MYSQL_DATABASE:-campuswap_db}
-      - JWT_SECRET=${JWT_SECRET}
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-campuswap_user}:${MYSQL_PASSWORD:-campuswap_pass}@mariadb:3306/${MYSQL_DATABASE:-campuswap_db}
+      - JWT_SECRET=${JWT_SECRET:-chave_super_secreta_jwt_padrao}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=miniopassword123
       - MINIO_BUCKET_NAME=campuswap-fotos
       - MINIO_SECURE=false
-      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_mock}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://gabriel-graciano-isw055.lapps.studio}
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
