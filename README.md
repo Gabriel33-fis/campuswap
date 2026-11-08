@@ -1,343 +1,224 @@
-# 📦 CampuSwap — Seu marketplace no campus
+# 📚 Documentação Técnica Reversa do Sistema
 
-Atividade desenvolvida para a disciplina de Introdução à Computação em Nuvem (ISW055), sob orientação do professor [siriani](https://github.com/siriani).
+Documento integrante da **Atividade 8** da disciplina de Introdução à Computação em Nuvem (ISW055), sob orientação do professor [siriani](https://github.com/siriani).
 
-> **🌐 Sistema no ar:** **[PREENCHER: https://SEU-SUBDOMINIO.exemplo.com.br](https://SEU-SUBDOMINIO.exemplo.com.br)**
-> **📚 Documentação da API (Swagger):** `https://SEU-SUBDOMINIO.exemplo.com.br/docs`
-> **🧾 Issue de entrega:** [PREENCHER: link da issue "Entrega — Seu negócio no ar"](https://github.com/SEU-USUARIO/SEU-REPOSITORIO/issues)
+[← Voltar ao README](./README.md)
 
 ---
 
-## Sumário
+## 1. Especificação Funcional (O Que o Sistema Faz)
 
-1. [Nome e Frase](#1-nome-e-frase)
-2. [A Dor](#2-a-dor)
-3. [Persona](#3-persona)
-4. [Concorrentes e Alternativas](#4-concorrentes-e-alternativas)
-5. [Proposta de Valor](#5-proposta-de-valor)
-6. [Modelo de Receita com Stripe](#6-modelo-de-receita-com-stripe)
-7. [Métricas de Sucesso](#7-métricas-de-sucesso)
-8. [Lean Canvas](#8-lean-canvas)
-9. [Arquitetura](#9-arquitetura)
-10. [Papéis e permissões](#10-papéis-e-permissões)
-11. [Eventos de negócio](#11-eventos-de-negócio)
-12. [Banco de dados: migração e seed](#12-banco-de-dados-migração-e-seed)
-13. [Como executar](#13-como-executar)
-14. [Evidências da entrega](#14-evidências-da-entrega)
-15. [Mapa de Reaproveitamento Arquitetural](#15-mapa-de-reaproveitamento-arquitetural)
+A aplicação é uma plataforma web voltada à economia circular e intercâmbio de materiais acadêmicos entre estudantes universitários (**CampuSwap**), implementada com base em uma arquitetura de microsserviços distribuídos:
+
+- **Autenticação, perfis e papéis (RBAC):** cadastro de usuários com validação de credenciais, login com senha protegida por hash seguro (Bcrypt) e emissão de tokens assinados JWT (PyJWT). Suporte a controle de acesso baseado em papéis (`aluno` e `admin`). Inclui fluxo de recuperação e redefinição de senha via SMTP (Mailtrap).
+- **Catálogo e vitrine de materiais:** anúncio, listagem, busca e filtragem de materiais acadêmicos por tipo de transação (`doação`, `troca` ou `venda`). Os dados dos anúncios e materiais ficam persistidos de forma relacional no MariaDB.
+- **Controle de propriedade e integridade de registros:** cada anúncio pertence estritamente ao estudante que o cadastrou. Somente o criador do anúncio ou usuários com papel administrativo (`admin`) têm autorização para editar ou remover o registro cadastrado. Tentativas de exclusão de anúncios alheios por estudantes comuns são rejeitadas com erro `403 Forbidden`.
+- **Monetização e Plano PRO Campus:** integração com checkout do Stripe em modo de teste para assinatura do plano Premium universitário. Após o pagamento e o processamento de webhooks, o perfil ganha o badge de destaque na vitrine e acesso a relatórios avançados.
+- **Armazenamento de objetos (fotos dos materiais):** integração com MinIO (API compatível com Amazon S3) em bucket privado (`campuswap-fotos`). O envio e consumo de fotos dos materiais acadêmicos é mediado e controlado pelo `catalogo_service`.
+- **Auditoria, segurança e mensageria:** eventos sensíveis (logins, falhas de autenticação, publicação de anúncios, alterações e bloqueios por tentativa de acesso negado 403) são emitidos em tempo real para o `log_service`, que os consolida e indexa em fluxos do Redis Streams. A extração dos registros consolidados é restrita a administradores.
+- **Observabilidade:** readiness probe e liveness probe implementados nos endpoints `/health` de cada serviço, além de métricas exportadas para Prometheus no endpoint `/metrics`.
 
 ---
 
-## 1. Nome e Frase
-**CampuSwap**: O marketplace universitário para compra, venda, empréstimo e troca de livros, calculadoras e materiais acadêmicos essenciais dentro do próprio campus.
+## 2. Tecnologias Utilizadas
+
+| Camada | Tecnologia |
+|---|---|
+| Serviços de back-end | Python 3.11, FastAPI, Pydantic, Uvicorn |
+| Autenticação e RBAC | Bcrypt (hashing), PyJWT (HS256) |
+| Banco de dados relacional | MariaDB 10.11 |
+| Logs de auditoria e cache | Redis 7 (Redis Streams) |
+| Armazenamento de objetos | MinIO (armazenamento compatível com S3) |
+| E-mail transacional | SMTP sandbox (Mailtrap) |
+| Pagamentos e assinaturas | Stripe API & Webhooks (modo de teste) |
+| Orquestração e deploy | Docker Compose, Portainer |
+| Métricas e monitoramento | `prometheus-fastapi-instrumentator` |
+| Infraestrutura | Ambiente gerenciado / VM em nuvem (`lapps.studio`) |
+| Front-end | SPA responsiva (HTML5, Tailwind CSS, JavaScript nativo) |
 
 ---
 
-## 2. A Dor
-Estudantes universitários enfrentam custos elevados semestrais com livros didáticos, calculadoras científicas, jalecos e materiais técnicos que frequentemente são utilizados por apenas um semestre ou disciplina específica. Ao mesmo tempo, veteranos acumulam esses materiais parados em repúblicas e quartos sem um canal confiável e rápido para repassá-los. As alternativas atuais (grupos de WhatsApp desorganizados ou marketplaces genéricos) geram desconfiança, golpes, custos de frete inviáveis e desencontros geográficos.
+## 3. Arquitetura do Sistema
 
----
-
-## 3. Persona
-* **Nome Fictício:** Lucas Ferreira, 21 anos.
-* **Perfil:** Estudante do 3º semestre de Engenharia/Tecnologia na Fatec.
-* **Rotina e Desafio:** Lucas tem orçamento mensal restrito e precisa de um livro de Cálculo e de uma calculadora gráfica para a matéria do semestre atual. Uma calculadora nova custa mais de R$ 250,00 na loja. Ele tenta garimpar ofertas no grupo de calouros/veteranos no WhatsApp, mas as mensagens se perdem em conversas paralelas e ele não sabe se o vendedor realmente estuda na faculdade ou se o produto está em bom estado.
-
----
-
-## 4. Concorrentes e Alternativas
-
-1. **Grupos de WhatsApp / Telegram de Turma:**
-   * *O que faz mal:* Totalmente desestruturado; anúncios somem no feed de conversas, não há histórico de preços, não há busca por categoria e inexiste controle de itens já vendidos ou emprestados.
-2. **Mercado Livre / Enjoei / OLX:**
-   * *O que faz mal:* O valor do frete muitas vezes supera o preço do livro usado; transações distantes sem pontos de encontro práticos no campus e sem validação de vínculo universitário.
-3. **Murais Físicos e Boca a Boca no Campus:**
-   * *O que faz mal:* Alcance extremamente restrito, falta de fotos detalhadas dos itens e lentidão para fechar negociações.
-
----
-
-## 5. Proposta de Valor
-O CampuSwap transforma a comunidade acadêmica em uma rede prática e confiável de economia circular, viabilizando transações presenciais seguras dentro da faculdade e com custo zero de entrega.
-
-Na página inicial do sistema, a proposta é apresentada em três ideias:
-
-* **Pague menos pelo que precisa:** livros e calculadoras de colegas que já cursaram a disciplina.
-* **Transforme o que sobrou em dinheiro:** anuncie para venda, troca, empréstimo ou doação.
-* **Entrega no corredor do campus:** todo anunciante é estudante verificado, sem frete e sem espera.
-
-A landing page também traz uma calculadora com controle deslizante que estima a economia por semestre (estimativa de R$ 90 por material, com 60% de economia na compra e 40% de retorno na venda).
-
----
-
-## 6. Modelo de Receita com Stripe
-
-O CampuSwap opera em modelo **Freemium** monetizado via **Stripe**:
-
-* **Plano Gratuito (Free Tier):**
-  * Até 3 anúncios ativos simultaneamente.
-  * Modos de negociação básicos: Venda direta e Empréstimo simples.
-  * Busca local com raio padrão de entrega no campus.
-* **Plano Estudante Pro (Assinatura Stripe — R$ 6,90 / mês):**
-  * Anúncios ilimitados simultâneos (ideal para veteranos e formandos repassando múltiplos itens).
-  * Destaque visual dos anúncios na página inicial do catálogo.
-  * Acesso liberado às modalidades de **Troca Direta (Swap)** e alertas de busca prioritária para livros concorridos.
-
-### Contato e pagamento entre as partes
-
-Ao tocar em **"Tenho interesse"**, o anunciante é notificado (selo de mensagens não lidas e aviso na tela) e uma conversa é criada para os dois combinarem a negociação. O pagamento depende do plano:
-
-| Plano | Como o pagamento acontece |
-| :--- | :--- |
-| **Comum** | Combinado diretamente entre comprador e vendedor, **sem intermediário**. A CampuSwap não participa da transação. |
-| **Premium** | O comprador paga pela **Stripe** (Checkout), que atua como intermediária. |
-
----
-
-## 7. Métricas de Sucesso
-* **Aquisição:** Número de cadastros de estudantes verificados por mês.
-* **Ativação:** Volume de anúncios de livros e materiais publicados semanalmente.
-* **Receita (MRR):** Receita Recorrente Mensal gerada a partir das assinaturas do Plano Pro via Stripe.
-* **Retenção / Liquidez:** Percentual de itens marcados como vendidos/emprestados em até 14 dias após a publicação.
-
----
-
-## 8. Lean Canvas
-
-| Bloco | Resposta do CampuSwap |
-| :--- | :--- |
-| **Problema** | 1. Alto custo de materiais acadêmicos pontuais. <br>2. Materiais úteis parados com veteranos. <br>3. Insegurança e desorganização nos grupos de WhatsApp. |
-| **Segmentos de Clientes** | Universitários da Fatec e campi regionais (graduandos buscando economia e formandos querendo desapegar de materiais). |
-| **Proposta Única de Valor** | Compartilhe mais, compre menos: o marketplace acadêmico confiável de troca, empréstimo e compra no seu campus. |
-| **Solução** | 1. Catálogo estruturado de itens acadêmicos (livros, calculadoras, apostilas). <br>2. 4 modos de transação: Comprar, Vender, Emprestar e Trocar. <br>3. Perfis autenticados com foto e pontos de encontro no campus. |
-| **Canais** | Divulgação em semanas acadêmicas, centros acadêmicos (CAs), atléticas, cartazes nos murais do campus e grupos institucionais. |
-| **Fontes de Receita** | Assinatura mensal do Plano Estudante Pro (R$ 6,90/mês) processada via Stripe Checkout e Webhooks. |
-| **Estrutura de Custos** | Servidor virtual (IaaS Proxmox), custos transacionais/taxas do Stripe e taxa de domínio/registro. |
-| **Métricas-Chave** | Cadastros mensais, anúncios criados, taxa de conversão Free → Pro e MRR. |
-| **Vantagem Injusta** | Base local fechada no campus (confiança entre pares), proximidade física imediata eliminando frete e validação acadêmica. |
-
----
-
-## 9. Arquitetura
-
-### 9.1 Visão geral dos serviços
+O diagrama abaixo descreve o isolamento de rede, a comunicação entre contêineres e a integração com serviços externos. Apenas o `catalogo_service` e as portas mapeadas de aplicação ficam expostos publicamente. Os demais serviços comunicam-se de forma isolada na sub-rede `tom_hanks_net`.
 
 ```mermaid
-flowchart LR
-    U["Estudante<br/>(navegador)"] -->|HTTPS| P["Proxy reverso<br/>(subdomínio público)"]
-    P --> C["catalogo_service<br/>FastAPI · serve o front (index.html)"]
+flowchart TD
+    subgraph Cliente["Navegador Web / Cliente HTTP"]
+        UI["SPA / Interface Web<br/>(CampusSwap Frontend)"]
+    end
 
-    C -->|"/api/login · /api/register · /api/checkout"| A["auth_service<br/>login, JWT, papéis, checkout"]
-    A -->|Checkout| S[("Stripe")]
-    S -.->|Webhook| A
+    subgraph Nuvem["Plataforma Gerenciada (lapps.studio / Portainer)"]
+        subgraph PaaS["Rede Interna Docker (tom_hanks_net)"]
+            Portainer["Portainer<br/>(Orquestração da Stack)"]
 
-    C -->|SQL| DB[("MariaDB<br/>campuswap_db")]
-    A -->|SQL| DB
-    C -->|"RPUSH eventos_negocio"| R[("Redis")]
-    R -->|consumo| L["log_service<br/>registra os eventos de negócio"]
-    C -->|"upload de fotos (S3)"| M[("MinIO")]
+            subgraph Micro["Microsserviços da Aplicação"]
+                CatSvc["catalogo_service (FastAPI)<br/>Host: 8207 / Interna: 8000"]
+                AuthSvc["auth_service (FastAPI)<br/>Host: 5000 / Interna: 5000"]
+                LogSvc["log_service (FastAPI)<br/>Interna: 6000"]
+            end
 
-    PT["Portainer<br/>(stack e healthchecks)"] -.->|gerencia| C
-    PT -.-> A
-    PT -.-> L
-    PT -.-> R
-    PT -.-> M
+            subgraph Infra["Persistência, Cache e Objetos"]
+                MariaDB[("MariaDB 10.11<br/>campuswap_db<br/>Interna: 3306")]
+                Redis[("Redis 7<br/>Audit Streams<br/>Interna: 6379")]
+                MinIO["MinIO S3 Storage<br/>bucket: campuswap-fotos<br/>Interna: 9000"]
+            end
+        end
+    end
+
+    subgraph Externos["Serviços Externos / Terceiros"]
+        Stripe["Stripe Checkout & Webhooks<br/>(Plano PRO Campus)"]
+        Mailtrap["Mailtrap SMTP<br/>(Recuperação de Senha)"]
+    end
+
+    %% Fluxos do usuário
+    UI -->|Navegação, anúncios e catálogo| CatSvc
+    UI -->|Autenticação direta| AuthSvc
+    UI -->|Checkout de assinatura| Stripe
+
+    %% Fluxos entre serviços
+    CatSvc -->|Validação de identidade / token| AuthSvc
+    CatSvc -->|Persistência de materiais| MariaDB
+    CatSvc -->|Upload e consulta de fotos| MinIO
+    AuthSvc -->|Persistência de usuários e papéis| MariaDB
+    AuthSvc -->|Disparo de e-mails de recuperação| Mailtrap
+
+    %% Auditoria assíncrona
+    CatSvc -.->|Eventos de negócio e violações| LogSvc
+    AuthSvc -.->|Eventos de login e segurança| LogSvc
+    LogSvc -->|XADD / XRANGE| Redis
+
+    %% Webhooks
+    Stripe -->|checkout.session.completed| AuthSvc
 ```
 
-> Ajuste os nomes dos containers e dos bancos para os que aparecem no seu `docker-compose.yml` / stack do Portainer.
+> **Classificação das Camadas de Nuvem:**
+> - **IaaS:** A infraestrutura de computação, processamento e conectividade de rede da VM base Linux/Proxmox.
+> - **PaaS:** A orquestração dos serviços via contêineres Docker gerenciados pelo Portainer na sub-rede `tom_hanks_net`.
+> - **SaaS:** Dependências terceiras consumidas por API ou protocolo padrão (Stripe para processamento de pagamentos e Mailtrap para gateway sandbox de SMTP).
 
-### 9.2 Serviços
+---
 
-| Serviço | Responsabilidade | Conversa com |
-| :--- | :--- | :--- |
-| **catalogo_service** (FastAPI) | Catálogo de materiais, CRUD com isolamento por usuário, moderação, estatísticas de admin, upload de fotos, entrega do front-end | auth_service, banco, Redis, MinIO |
-| **auth_service** | Cadastro, login, emissão do JWT com o papel do usuário e checkout do Plano Pro | Stripe, banco de usuários |
-| **log_service** | Consome os eventos de negócio da fila do Redis e os registra no log | Redis |
-| **Redis** | Fila de eventos de negócio (lista `eventos_negocio`) para auditoria | catalogo_service, log_service |
-| **MinIO** | Armazenamento S3 das fotos de produtos e de perfil | catalogo_service |
-| **Stripe** | Cobrança recorrente do Plano Estudante Pro | auth_service |
-| **Portainer** | Deploy da stack e monitoramento de saúde dos containers | todos os containers |
+## 4. Catálogo de Regras de Negócio
 
-### 9.3 Como os serviços conversam
+| ID | Regra | Comportamento e Resultado |
+|---|---|---|
+| **RN01** | **Autenticação e Assinatura JWT** | Requisições a rotas protegidas exigem token Bearer válido no cabeçalho `Authorization`. Token expirado ou assinatura inválida retorna HTTP `401 Unauthorized`. |
+| **RN02** | **Controle de Acesso por Papel (RBAC)** | Endpoints administrativos (como `/api/admin/estatisticas` e leitura de logs) exigem a claim de papel `admin`. Papéis de menor privilégio (como `aluno`) recebem HTTP `403 Forbidden` (`{"detail": "Acesso negado: o papel 'aluno' não possui permissão para esta operação."}`). |
+| **RN03** | **Bloqueio de Modificação de Registro Alheio** | Apenas o autor do anúncio (`material.usuario_id == token.usuario_id`) ou um `admin` pode alterar ou remover um material. Caso outro usuário autenticado tente a exclusão, a API retorna HTTP `403 Forbidden` (`{"detail": "Acesso não autorizado: não pode remover anúncios de outros utilizadores."}`). |
+| **RN04** | **Classificação de Transações Acadêmicas** | Todo material registrado deve pertencer obrigatoriamente a uma das três categorias: `doacao` (preço fixado em zero/grátis), `troca` ou `venda` (preço numérico positivo). |
+| **RN05** | **Isolamento de Armazenamento de Fotos no MinIO** | Imagens enviadas para itens são salvas exclusivamente no bucket `campuswap-fotos`. O bucket possui restrição de acesso público direto (HTTP 403), sendo servido ou gerenciado via credenciais da aplicação. |
+| **RN06** | **Ativação do Plano PRO Campus** | Ao receber a notificação de checkout concluído da Stripe via webhook, o status de assinatura (`is_premium`) do usuário é atualizado, concedendo destaque visual na vitrine e novos privilégios na emissão de tokens. |
+| **RN07** | **Trilha de Auditoria Obrigatória** | Qualquer tentativa de escalada de privilégio, violação de posse (403) ou modificação de dados gera obrigatoriamente um evento de log encaminhado ao `log_service`. |
+
+---
+
+## 5. Modelagem de Dados
+
+A persistência relacional reside no MariaDB (`campuswap_db`), enquanto as imagens binárias são tratadas pelo MinIO e as trilhas de auditoria ficam desacopladas no Redis Streams.
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    participant N as Navegador
-    participant C as catalogo_service
-    participant A as auth_service
-    participant D as Banco
-    participant R as Redis
+erDiagram
+    USUARIOS {
+        int id PK
+        string nome
+        string email UK
+        string senha_hash
+        string papel "aluno | admin"
+        boolean is_premium
+        datetime criado_em
+    }
 
-    N->>C: POST /api/login (e-mail, senha)
-    C->>A: POST /login
-    A-->>C: JWT (id, papel, is_premium)
-    C-->>N: JWT
-    N->>C: POST /api/itens (Authorization: Bearer JWT)
-    C->>C: get_current_user valida o JWT
-    C->>D: INSERT em itens_marketplace
-    C->>R: RPUSH eventos_negocio (item_anunciado)
-    C-->>N: 201 Created
-    N->>C: DELETE /api/itens/{id} de outro usuário
-    C->>R: RPUSH eventos_negocio (tentativa_remocao_nao_autorizada)
-    C-->>N: 403 Forbidden
+    MATERIAIS {
+        int id PK
+        int usuario_id FK
+        string titulo
+        string descricao
+        string tipo_transacao "venda | troca | doacao"
+        decimal preco
+        string foto_url "Chave do objeto S3"
+        string status "disponivel | negociado | finalizado"
+        datetime criado_em
+    }
+
+    LOGS_AUDITORIA {
+        string stream_id PK "Redis Streams ID"
+        string servico
+        string acao
+        int usuario_id
+        string ip_origem
+        string status_code
+        datetime timestamp
+    }
+
+    USUARIOS ||--o{ MATERIAIS : "anuncia"
+    USUARIOS ||--o{ LOGS_AUDITORIA : "gera_evento"
 ```
 
-### 9.4 Endpoints principais
+### Relacionamentos e Isolamento
 
-| Método e rota | Quem acessa | Descrição |
-| :--- | :--- | :--- |
-| `GET /health` | público | Verificação de saúde (usada nos healthchecks) |
-| `POST /api/register`, `POST /api/login` | público | Proxy para o auth_service |
-| `POST /api/checkout` | autenticado | Cria a sessão de pagamento do Plano Pro na Stripe |
-| `GET /api/itens`, `GET /api/itens/{id}` | público | Vitrine de materiais disponíveis |
-| `GET /api/meus-itens` | autenticado | Apenas os anúncios do próprio usuário |
-| `POST /api/itens` | autenticado | Cria anúncio (o dono vem do JWT, nunca do corpo) |
-| `PUT /api/itens/{id}` | dono, moderador ou admin | Edita anúncio. Outros usuários recebem **403** |
-| `DELETE /api/itens/{id}` | dono, moderador ou admin | Remove anúncio. Outros usuários recebem **403** |
-| `POST /api/itens/{id}/foto` | dono, moderador ou admin | Envia a foto do item para o MinIO |
-| `POST /api/itens/{id}/interesse` | autenticado | Notifica o anunciante e abre (ou reaproveita) a conversa com o interessado |
-| `GET /api/conversas`, `GET /api/conversas/nao-lidas` | autenticado | Conversas do usuário e contador de mensagens não lidas |
-| `GET/POST /api/conversas/{id}/mensagens` | participantes da conversa | Lê e envia mensagens. Quem não participa recebe **403** |
-| `POST /api/conversas/{id}/pagar` | comprador, anúncio premium | Cria a sessão de pagamento na Stripe |
-| `PATCH /api/itens/{id}/moderar` | moderador ou admin | Aprova ou suspende um anúncio |
-| `GET /api/admin/estatisticas` | admin | Totais de itens por status |
+- **USUARIOS → MATERIAIS (1:N):** um estudante cadastra diversos anúncios de livros, apostilas ou equipamentos. A chave estrangeira `usuario_id` garante a validação estrita de posse e a trava de segurança na deleção/atualização (RN03).
+- **MATERIAIS → MinIO (1:1 lógico):** o banco armazena unicamente o identificador e caminho relativo da imagem (`foto_url`). O binário reside de forma persistente no volume `gabriel_minio_data`.
+- **Auditoria desacoplada:** os eventos de auditoria são mantidos em memória no Redis com retenção configurável, evitando concorrência e degradação de performance na base relacional MariaDB.
 
 ---
 
-## 10. Papéis e permissões
+## 6. Observabilidade e Monitoramento
 
-O papel do usuário vem no JWT emitido pelo `auth_service`. O `catalogo_service` aplica as regras em cada rota.
+| Serviço | Healthcheck (`/health`) | Coleta de Métricas (`/metrics`) |
+|---|---|---|
+| `catalogo_service` | Verifica integridade da conexão ao MariaDB (`200 OK` / `503 Service Unavailable`) | Prometheus instrumented via FastAPI |
+| `auth_service` | Verifica prontidão do MariaDB e validação interna (`200 OK`) | Prometheus instrumented via FastAPI |
+| `log_service` | Verifica comunicação ativa com o Redis Streams via ping (`200 OK`) | Prometheus instrumented via FastAPI |
 
-| Papel | O que pode fazer |
-| :--- | :--- |
-| `aluno` | Ver a vitrine, anunciar, editar e remover **apenas os próprios** anúncios |
-| `moderador` | Tudo do aluno, mais editar/remover anúncios de terceiros e usar `/moderar` |
-| `admin` | Tudo do moderador, mais `/api/admin/estatisticas` |
-
-O plano **Pro** é um atributo da assinatura (`is_premium`), independente do papel.
-
-**Regras de segurança implementadas:**
-
-* **Isolamento por usuário:** o `usuario_id` do anúncio é comparado ao id do JWT. Se forem diferentes e o papel não for `moderador` ou `admin`, a API responde `403 Forbidden`.
-* **Controle por papel:** rotas administrativas usam a dependência `verificar_papeis([...])`. Um `aluno` que chama `/moderar` ou `/admin/estatisticas` (por curl, Postman ou Swagger) recebe `403`.
-* **Dono vindo do token:** ao criar um anúncio, o dono é sempre o usuário autenticado. O `PUT` ignora campos como `usuario_id`.
-* **Tentativas negadas são auditadas** como eventos de negócio (seção seguinte).
+Cada serviço possui healthcheck configurado no Docker Compose rodando em intervalos de 10 segundos com tolerância a falhas transitórias (`retries: 3`, `start_period: 15-25s`).
 
 ---
 
-## 11. Eventos de negócio
-
-Cada ação relevante grava um evento JSON na lista `eventos_negocio` do Redis, no formato `{"acao", "usuario_id", "detalhes"}`.
-
-| Evento | Quando acontece |
-| :--- | :--- |
-| `item_anunciado` | Um anúncio é criado |
-| `item_editado` | Um anúncio é alterado |
-| `item_removido` | Um anúncio é excluído |
-| `item_moderado` | Um moderador aprova ou suspende um anúncio |
-| `foto_item_enviada` | Uma foto é enviada ao MinIO |
-| `interesse_registrado` | Um estudante demonstra interesse e a conversa é aberta |
-| `mensagem_enviada` | Uma mensagem é enviada no chat |
-| `pagamento_stripe_iniciado` | O comprador inicia o pagamento pela Stripe (anúncio premium) |
-| `tentativa_acesso_conversa_nao_autorizada` | Alguém tenta ler ou escrever numa conversa da qual não participa |
-| `tentativa_edicao_nao_autorizada` | Alguém tenta editar o anúncio de outro usuário |
-| `tentativa_remocao_nao_autorizada` | Alguém tenta remover o anúncio de outro usuário |
-| `tentativa_upload_nao_autorizada` | Alguém tenta enviar foto para o anúncio de outro usuário |
-
-Os eventos são consumidos e registrados pelo `log_service`. Para consultá-los, veja os logs desse container (no Portainer: Containers > log_service > Logs) ou, enquanto ainda estiverem na fila:
+## 7. Como Executar
 
 ```bash
-docker exec -it <container-redis> redis-cli LRANGE eventos_negocio 0 -1
-```
+# 1. Clonar o repositório
+git clone https://github.com/Gabriel33-fis/campuswap.git
+cd campuswap
 
----
+# 2. Configurar o arquivo de variáveis de ambiente
+cp .env.example .env
+# Configure suas credenciais de banco, segredos JWT e chaves de teste da Stripe
 
-## 12. Banco de dados: migração e seed
-
-Os scripts ficam versionados neste repositório:
-
-```
-db/
-├── migrations/
-│   └── 001_schema.sql     # criação das tabelas e colunas
-└── seed.sql               # dados iniciais (usuários de teste e anúncios de exemplo)
-```
-
-**[PREENCHER]** Execute na ordem abaixo (ajuste o comando ao seu banco):
-
-```bash
-# 1) migração
-<comando para executar db/migrations/001_schema.sql>
-# 2) seed
-<comando para executar db/seed.sql>
-```
-
-A tabela principal é `itens_marketplace`, com as colunas: `id`, `usuario_id`, `categoria_id`, `titulo`, `descricao`, `condicao`, `modalidade`, `preco`, `imagem_url`, `foto_key`, `status` e `criado_em`. Na inicialização, o `catalogo_service` também garante que as colunas `condicao`, `imagem_url` e `foto_key` existam.
-
-**Usuários do seed (apenas para demonstração):**
-
-| E-mail | Papel | Senha |
-| :--- | :--- | :--- |
-| **[PREENCHER]** | `aluno` | **[PREENCHER]** |
-| **[PREENCHER]** | `aluno` (segundo usuário, para testar o isolamento) | **[PREENCHER]** |
-| **[PREENCHER]** | `admin` | **[PREENCHER]** |
-
----
-
-## 13. Como executar
-
-**Pré-requisitos:** Docker e Docker Compose.
-
-```bash
-git clone https://github.com/SEU-USUARIO/SEU-REPOSITORIO.git
-cd SEU-REPOSITORIO
-cp .env.example .env        # preencha as variáveis
+# 3. Subir toda a pilha de microsserviços
 docker compose up -d --build
 ```
 
-**Variáveis de ambiente do catalogo_service:**
-
-| Variável | Padrão | Uso |
-| :--- | :--- | :--- |
-| `AUTH_SERVICE_URL` | `http://auth_service:5000` | Endereço do serviço de autenticação |
-| `REDIS_HOST` | `redis` | Host do Redis |
-| `REDIS_PORT` | `6379` | Porta do Redis |
-| `DATABASE_URL` | | Conexão com o MariaDB |
-| `JWT_SECRET` | | Segredo compartilhado para validar o JWT |
-| `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` | | Acesso ao MinIO |
-| `MINIO_BUCKET_NAME` | `campuswap-fotos` | Bucket das fotos |
-| `STRIPE_SECRET_KEY` | | Chave da Stripe para o pagamento de anúncios premium |
-| `PUBLIC_BASE_URL` | | URL pública do sistema (retorno do checkout) |
-
-> Nunca versione o arquivo `.env`. Mantenha apenas o `.env.example` sem valores reais.
-
-**Deploy em produção:** a stack é publicada pelo Portainer a partir do `docker-compose.yml` e fica acessível no subdomínio informado no topo deste README.
+A aplicação publica a porta `8207` (mapeada para a porta interna `8000` do `catalogo_service`) e a porta `5000` para o `auth_service`. Em ambiente de produção gerenciado (Portainer), a stack é orquestrada diretamente com persistência nos volumes `gabriel_mariadb_data` e `gabriel_minio_data`.
 
 ---
 
-## 14. Evidências da entrega
+## 8. Principais Endpoints
 
-Prints armazenados em `docs/prints/`. A data e a hora da issue de entrega também servem de evidência da data realizada.
-
-| # | Evidência | Arquivo |
-| :-: | :--- | :--- |
-| 1 | Landing page no ar, com a URL visível | ![Landing page](docs/prints/01-landing.png) |
-| 2 | Listagem do recurso principal (vitrine de materiais) | ![Listagem](docs/prints/02-listagem.png) |
-| 3 | `403` para um papel sem permissão (aluno chamando rota de moderador ou admin) | ![403 por papel](docs/prints/03-403-papel.png) |
-| 4 | Bloqueio ao tentar abrir/alterar o registro de outro usuário (`403`) | ![Bloqueio de registro alheio](docs/prints/04-bloqueio-registro.png) |
-| 5 | Eventos de negócio no log (container `log_service`) | ![Eventos no log](docs/prints/05-eventos-log.png) |
-| 6 | Arquivo armazenado no MinIO | ![Arquivo no MinIO](docs/prints/06-minio.png) |
-| 7 | Stack no Portainer com os containers saudáveis | ![Stack no Portainer](docs/prints/07-portainer.png) |
+| Módulo | Método | Rota | Descrição |
+|---|:---:|---|---|
+| **Autenticação** | `POST` | `/api/auth/register` | Criação de conta institucional |
+| | `POST` | `/api/auth/login` | Autenticação e emissão do Bearer JWT |
+| | `POST` | `/api/auth/forgot-password` | Solicitação de recuperação de senha por e-mail |
+| | `POST` | `/api/auth/reset-password` | Validação de token e redefinição de credencial |
+| **Materiais** | `GET` | `/api/materiais` ou `/api/itens` | Listagem pública da vitrine acadêmica |
+| | `POST` | `/api/materiais` | Cadastro de novo material (requer autenticação) |
+| | `DELETE` | `/api/itens/{id}` ou `/api/materiais/{id}` | Exclusão restrita ao dono do registro ou `admin` |
+| **Administração** | `GET` | `/api/admin/estatisticas` | Métricas gerais restritas ao perfil `admin` |
+| | `GET` | `/api/admin/logs` | Consulta a eventos de auditoria gravados no Redis Streams |
+| **Health** | `GET` | `/health` | Verificação de status nos microsserviços |
 
 ---
 
-## 15. Mapa de Reaproveitamento Arquitetural
+## 9. Evidências de Validação e Implantação
 
-| Peça do Projeto Atual (Tom Hanks) | O que vira no SaaS (CampuSwap) | Exemplo Prático no Novo Domínio |
-| :--- | :--- | :--- |
-| **Catálogo de Filmes (TMDB)** | **Catálogo de Materiais Acadêmicos** | Título do livro/item, categoria (Cálculo, Eletrônica, etc.), estado de conservação, modalidade (Venda/Troca/Empréstimo). |
-| **Microsserviço de Login + RBAC** | **Gestão de Usuários e Perfis do Campus** | Papéis: `aluno` (estudante comum), `moderador` e `admin` (moderação do campus). O plano `Pro` é um atributo da assinatura. |
-| **Logs e Auditoria (Redis)** | **Eventos de Marketplace** | Eventos assíncronos: `item_anunciado`, `item_editado`, `item_removido`, `item_moderado` e tentativas não autorizadas. |
-| **Upload de Perfil (MinIO)** | **Fotos dos Produtos e Materiais** | Armazenamento de imagens reais dos livros/calculadoras e fotos de perfil dos estudantes no bucket S3 MinIO. |
-| **Plano Premium (Stripe)** | **Assinatura Estudante Pro** | Assinatura recorrente que destrava anúncios ilimitados e destaque visual nas buscas do campus. |
-| **Swagger, CI/CD e Observabilidade** | **Infraestrutura e Contratos de API** | Documentação OpenAPI unificada em `/docs` e deploy pelo Portainer. |
+As evidências fotográficas da stack em execução e dos testes de segurança encontram-se organizadas no diretório [`docs/prints/`](./docs/prints/):
+
+1. **`01-landing.png`**: Interface pública do CampuSwap acessível via proxy reverso com domínio seguro.
+2. **`02-listagem.png`**: Vitrine de materiais com filtros de transação (`doação`, `troca`, `venda`) e usuário autenticado.
+3. **`03-403-papel.png`**: Bloqueio de autorização RBAC (`HTTP 403 Forbidden`) para perfil `aluno` em endpoint administrativo.
+4. **`04-bloqueio-registro.png`**: Bloqueio de segurança (`HTTP 403 Forbidden`) na tentativa de exclusão de material de outro usuário.
+5. **`05-eventos-log.png`**: Logs do serviço `gabriel_log_service` processando eventos e respondendo a healthchecks.
+6. **`06-minio.png`**: Conexão com a API do MinIO confirmando o bucket `campuswap-fotos` e controle de permissões S3.
+7. **`07-portainer.png`**: Painel do Portainer demonstrando todos os contêineres da stack ativos e saudáveis (`healthy`/`running`).
