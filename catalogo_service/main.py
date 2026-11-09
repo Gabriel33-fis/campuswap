@@ -1,629 +1,494 @@
 import os
-import json
-from typing import List, Literal, Optional
+from datetime import datetime, timedelta
+import stripe
+import requests
+from fastapi import FastAPI, HTTPException, Depends, Request, Response, Header, status
+from sqlalchemy.orm import Session
+from sqlalchemy import text, func
+from prometheus_fastapi_instrumentator import Instrumentator
 
-import redis
-import httpx
-from pydantic import BaseModel, Field
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Request, Response
-from fastapi.responses import FileResponse, StreamingResponse
+from database import get_db, engine, Base
+import models
+import schemas
+import auth
+import email_service
 
-from schemas import ItemCreate, ItemUpdate, ItemResponse
-from auth_guard import get_current_user
+LOG_SERVICE_URL = os.getenv("LOG_SERVICE_URL", "http://log_service:6000")
 
-# Se o seu auth_guard.py já define verificar_papeis, ele é usado. Caso contrário, esta versão entra no lugar.
+# Configurações Stripe (Modo de Teste)
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID_PRO") or os.getenv("STRIPE_PRICE_ID")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+
+CHECKOUT_SUCCESS_URL = os.getenv(
+    "CHECKOUT_SUCCESS_URL",
+    "https://gabriel-graciano-isw055.lapps.studio/?session_id={CHECKOUT_SESSION_ID}"
+)
+CHECKOUT_CANCEL_URL = os.getenv(
+    "CHECKOUT_CANCEL_URL",
+    "https://gabriel-graciano-isw055.lapps.studio/?status=cancelado"
+)
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://gabriel-graciano-isw055.lapps.studio")
+
+VALOR_MENSAL_PRO_BRL = 19.90
+
+
+def extrair_ip(request: Request) -> str:
+    """Extrai o IP real considerando proxies reversos ou cliente direto."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "desconhecido"
+
+
+def registrar_log(usuario_id, acao, ip=None, detalhes=None):
+    try:
+        requests.post(
+            f"{LOG_SERVICE_URL}/logs",
+            json={
+                "usuario_id": usuario_id,
+                "acao": acao,
+                "ip_origem": ip,
+                "detalhes": detalhes
+            },
+            timeout=1.0
+        )
+    except Exception as e:
+        print(f"Aviso log_service: {e}")
+
+
+# Cria as tabelas de autenticação no banco
 try:
-    from auth_guard import verificar_papeis
-except ImportError:
-    def verificar_papeis(papeis_permitidos: List[str]):
-        def dependencia(usuario: dict = Depends(get_current_user)):
-            if usuario.get("papel", "aluno") not in papeis_permitidos:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Acesso proibido: seu perfil não tem permissão para esta ação.",
-                )
-            return usuario
-        return dependencia
-from database import get_db_connection
-from storage import upload_imagem_item, baixar_imagem
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"Aviso ao inicializar tabelas auth: {e}")
 
-# 1. Instância do FastAPI
-app = FastAPI(title="CampuSwap - Catálogo de Materiais")
+app = FastAPI(title="CampusSwap - Auth Service")
 
-# 2. Configurações de serviços
-AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth_service:5000")
-
-# Papéis que podem editar/remover anúncios de outros usuários.
-# Para permitir só administradores, use {"admin"}.
-PAPEIS_PRIVILEGIADOS = {"admin", "moderador"}
-PAPEIS_MODERACAO = ["moderador", "admin"]
-
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "")
+# Instrumentação Prometheus
+Instrumentator().instrument(app).expose(app)
 
 
-class ItemSaida(ItemResponse):
-    """Garante que imagem_url chegue ao front, mesmo que o schema original não a declare."""
-    imagem_url: Optional[str] = None
-
-
-# Campos que o PUT pode alterar (impede mudar usuario_id, id, criado_em etc.)
-CAMPOS_EDITAVEIS = {"titulo", "descricao", "condicao", "modalidade", "preco",
-                    "status", "categoria_id", "imagem_url"}
-
-
-# Tabelas do chat: (versão SQLite, versão MySQL)
-DDL_CHAT = [
-    ("""CREATE TABLE IF NOT EXISTS conversas (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL,
-        anunciante_id VARCHAR(64) NOT NULL, interessado_id VARCHAR(64) NOT NULL,
-        anunciante_nome VARCHAR(120), interessado_nome VARCHAR(120),
-        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE (item_id, interessado_id))""",
-     """CREATE TABLE IF NOT EXISTS conversas (
-        id INT AUTO_INCREMENT PRIMARY KEY, item_id INT NOT NULL,
-        anunciante_id VARCHAR(64) NOT NULL, interessado_id VARCHAR(64) NOT NULL,
-        anunciante_nome VARCHAR(120), interessado_nome VARCHAR(120),
-        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE (item_id, interessado_id))"""),
-    ("""CREATE TABLE IF NOT EXISTS mensagens (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, conversa_id INTEGER NOT NULL,
-        remetente_id VARCHAR(64) NOT NULL, texto TEXT NOT NULL, lida INTEGER DEFAULT 0,
-        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""",
-     """CREATE TABLE IF NOT EXISTS mensagens (
-        id INT AUTO_INCREMENT PRIMARY KEY, conversa_id INT NOT NULL,
-        remetente_id VARCHAR(64) NOT NULL, texto TEXT NOT NULL, lida INT DEFAULT 0,
-        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"""),
-]
-
-
-def migrar_banco():
+@app.get("/health", tags=["Observabilidade"])
+def health_check(response: Response, db: Session = Depends(get_db)):
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        for ddl in (
-            "ALTER TABLE itens_marketplace ADD COLUMN condicao VARCHAR(50) DEFAULT 'semi-novo'",
-            "ALTER TABLE itens_marketplace ADD COLUMN imagem_url VARCHAR(500) NULL",
-            "ALTER TABLE itens_marketplace ADD COLUMN foto_key VARCHAR(500) NULL",
-            "ALTER TABLE itens_marketplace ADD COLUMN is_premium INTEGER DEFAULT 0",
-        ):
-            try:
-                cursor.execute(ddl)
-                conn.commit()
-            except Exception:
-                pass  # Coluna já existe
-        for ddl_sqlite, ddl_mysql in DDL_CHAT:
-            try:
-                cursor.execute(ddl_sqlite)
-                conn.commit()
-            except Exception:
-                try:
-                    cursor.execute(ddl_mysql)
-                    conn.commit()
-                except Exception as e:
-                    print(f"Erro ao criar tabela do chat: {e}")
-        conn.close()
-    except Exception as e:
-        print(f"Erro na migração do banco: {e}")
+        db.execute(text("SELECT 1"))
+        return {
+            "status": "healthy",
+            "service": "auth_service",
+            "dependencies": {
+                "database": "up"
+            }
+        }
+    except Exception as exc:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {
+            "status": "unhealthy",
+            "service": "auth_service",
+            "dependencies": {
+                "database": "down"
+            },
+            "error": str(exc)
+        }
 
 
-@app.on_event("startup")
-def startup_event():
-    migrar_banco()
+@app.post("/register", status_code=status.HTTP_201_CREATED)
+def register(usuario_in: schemas.UsuarioCriar, request: Request, db: Session = Depends(get_db)):
+    usuario_existente = db.query(models.Usuario).filter(models.Usuario.email == usuario_in.email).first()
+    if usuario_existente:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="E-mail já cadastrado"
+        )
+    
+    senha_hash = auth.gerar_hash_senha(usuario_in.senha)
+    novo_usuario = models.Usuario(
+        nome=usuario_in.nome,
+        email=usuario_in.email,
+        senha_hash=senha_hash,
+        papel=usuario_in.papel or "aluno",
+        plano="free",
+        status_assinatura="active"
+    )
+    db.add(novo_usuario)
+    db.commit()
+    db.refresh(novo_usuario)
+
+    ip = extrair_ip(request)
+    registrar_log(
+        usuario_id=novo_usuario.id,
+        acao="registro",
+        ip=ip,
+        detalhes=f"Novo usuário cadastrado com plano Free e papel '{novo_usuario.papel}'"
+    )
+
+    return {"message": "Usuário cadastrado com sucesso", "usuario_id": novo_usuario.id}
 
 
-# 3. Rotas essenciais
-@app.get("/health")
-def health():
-    return {"status": "healthy"}
-
-
-@app.get("/")
-def home():
-    index_path = os.path.join(os.path.dirname(__file__), "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    return {"status": "CampuSwap API online", "docs": "/docs"}
-
-
-# 4. Proxy de Autenticação
-@app.post("/api/register")
-@app.post("/api/usuarios")
-async def proxy_register(request: Request):
-    body = await request.json()
-    async with httpx.AsyncClient() as client:
-        try:
-            res = await client.post(f"{AUTH_SERVICE_URL}/register", json=body, timeout=10.0)
-            return Response(content=res.content, status_code=res.status_code, media_type="application/json")
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Erro ao conectar ao auth_service: {str(e)}")
-
-
-@app.post("/api/login")
-async def proxy_login(request: Request):
-    body = await request.json()
-    async with httpx.AsyncClient() as client:
-        try:
-            res = await client.post(f"{AUTH_SERVICE_URL}/login", json=body, timeout=10.0)
-            return Response(content=res.content, status_code=res.status_code, media_type="application/json")
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Erro ao conectar ao auth_service: {str(e)}")
-
-
-@app.post("/api/checkout")
-async def proxy_checkout(request: Request):
-    auth_header = request.headers.get("Authorization")
-    headers = {"Authorization": auth_header} if auth_header else {}
-    async with httpx.AsyncClient() as client:
-        try:
-            res = await client.post(f"{AUTH_SERVICE_URL}/checkout", headers=headers, timeout=15.0)
-            return Response(content=res.content, status_code=res.status_code, media_type="application/json")
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Erro ao conectar com auth_service: {str(e)}")
-
-
-# Conexão com o Redis para eventos de auditoria e negócio
-REDIS_HOST = os.getenv("REDIS_HOST", "redis")
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-
-
-def emitir_evento_log(acao: str, usuario_id, detalhes: dict):
-    payload = {"acao": acao, "usuario_id": usuario_id, "detalhes": detalhes}
-    try:
-        redis_client.rpush("eventos_negocio", json.dumps(payload))
-    except Exception as e:
-        print(f"Erro ao emitir log no Redis: {e}")
-
-
-# -------------------------------------------------------------
-# Identidade e autorização (Requisito 6: isolamento por usuário)
-# -------------------------------------------------------------
-
-def obter_user_id(current_user: dict):
-    """Lê o id do usuário no JWT, aceitando usuario_id, id ou sub."""
-    user_id = current_user.get("usuario_id") or current_user.get("id") or current_user.get("sub")
-    if user_id is None:
+@app.post("/login")
+def login(dados: schemas.LoginRequest, request: Request, db: Session = Depends(get_db)):
+    ip = extrair_ip(request)
+    usuario = db.query(models.Usuario).filter(models.Usuario.email == dados.email).first()
+    
+    if not usuario or not auth.verificar_senha(dados.senha, usuario.senha_hash):
+        registrar_log(
+            usuario_id=usuario.id if usuario else None,
+            acao="falha_login",
+            ip=ip,
+            detalhes=f"Tentativa de login frustrada para o e-mail: {dados.email}"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Identificador de usuário não encontrado no token.",
+            detail="Credenciais inválidas"
         )
-    return user_id
+    
+    plano_atual = getattr(usuario, "plano", "free")
+    status_ass = getattr(usuario, "status_assinatura", "active")
+    is_pro = plano_atual == "pro" and status_ass == "active"
+
+    token = auth.criar_access_token(
+        usuario_id=usuario.id,
+        email=usuario.email,
+        papel=usuario.papel,
+        nome=usuario.nome,
+        is_premium=is_pro
+    )
+
+    registrar_log(
+        usuario_id=usuario.id,
+        acao="login",
+        ip=ip,
+        detalhes=f"Login realizado por '{usuario.nome}' [{usuario.papel} | Plano: {plano_atual}]"
+    )
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "usuario_nome": usuario.nome,
+        "papel": usuario.papel,
+        "plano": plano_atual,
+        "status_assinatura": status_ass,
+        "is_premium": is_pro
+    }
 
 
-def exigir_dono_ou_admin(item: dict, current_user: dict, verbo: str, evento: str):
-    """Responde 403 se o item pertence a outro usuário e quem pede não é admin."""
-    user_id = obter_user_id(current_user)
-    papel = current_user.get("papel")
-    # str() nos dois lados: o JWT pode trazer o id como texto e o banco como inteiro.
-    if str(item["usuario_id"]) != str(user_id) and papel not in PAPEIS_PRIVILEGIADOS:
-        emitir_evento_log(evento, user_id, {"item_alvo": item["id"]})
+# Rota consultada pelo catalogo_service para validar limites em tempo real
+@app.get("/me")
+@app.get("/api/usuarios/me")
+def obter_usuario_me(
+    usuario_atual: models.Usuario = Depends(auth.obter_usuario_atual)
+):
+    return {
+        "id": usuario_atual.id,
+        "nome": usuario_atual.nome,
+        "email": usuario_atual.email,
+        "papel": usuario_atual.papel,
+        "plano": getattr(usuario_atual, "plano", "free"),
+        "status_assinatura": getattr(usuario_atual, "status_assinatura", "active"),
+        "is_premium": getattr(usuario_atual, "plano", "free") == "pro",
+        "stripe_customer_id": getattr(usuario_atual, "stripe_customer_id", None)
+    }
+
+
+@app.post("/forgot-password")
+def forgot_password(dados: schemas.EsqueciSenhaRequest, request: Request, db: Session = Depends(get_db)):
+    ip = extrair_ip(request)
+    usuario = db.query(models.Usuario).filter(models.Usuario.email == dados.email).first()
+    if not usuario:
+        return {"message": "Se o e-mail existir, as instruções foram enviadas."}
+
+    token_reset = auth.gerar_token_recuperacao()
+    expiracao = datetime.utcnow() + timedelta(minutes=15)
+
+    reset_entry = models.RecuperacaoSenha(
+        usuario_id=usuario.id,
+        token=token_reset,
+        expira_em=expiracao
+    )
+    db.add(reset_entry)
+    db.commit()
+
+    email_service.enviar_email_recuperacao(usuario.email, token_reset)
+
+    registrar_log(
+        usuario_id=usuario.id,
+        acao="solicitacao_recuperacao_senha",
+        ip=ip,
+        detalhes=f"Token de recuperação enviado para {usuario.email}"
+    )
+
+    return {"message": "E-mail de recuperação enviado com sucesso."}
+
+
+@app.post("/reset-password")
+def reset_password(dados: schemas.RedefinirSenhaRequest, request: Request, db: Session = Depends(get_db)):
+    ip = extrair_ip(request)
+    reset_entry = db.query(models.RecuperacaoSenha).filter(
+        models.RecuperacaoSenha.token == dados.token,
+        models.RecuperacaoSenha.usado == False
+    ).first()
+
+    if not reset_entry or reset_entry.expira_em < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token inválido ou expirado"
+        )
+
+    usuario = db.query(models.Usuario).filter(models.Usuario.id == reset_entry.usuario_id).first()
+    if not usuario:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado")
+
+    usuario.senha_hash = auth.gerar_hash_senha(dados.nova_senha)
+    reset_entry.usado = True
+    db.commit()
+
+    registrar_log(
+        usuario_id=usuario.id,
+        acao="redefinicao_senha",
+        ip=ip,
+        detalhes="Senha redefinida com sucesso com token de recuperação"
+    )
+
+    return {"message": "Senha redefinida com sucesso!"}
+
+
+# =====================================================================
+# ROTAS DO STRIPE (ATIVIDADE 11 - SAAS COMPLETO & ASSINATURA RECORRENTE)
+# =====================================================================
+
+@app.post("/checkout")
+@app.post("/api/assinaturas/checkout")
+def criar_checkout_session(
+    request: Request,
+    usuario_atual: models.Usuario = Depends(auth.obter_usuario_atual),
+    db: Session = Depends(get_db)
+):
+    """Cria uma Checkout Session no Stripe com mode='subscription' vinculada ao customer."""
+    if not STRIPE_PRICE_ID:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="STRIPE_PRICE_ID não configurado no servidor."
+        )
+
+    try:
+        customer_id = usuario_atual.stripe_customer_id
+        if not customer_id:
+            customer = stripe.Customer.create(
+                email=usuario_atual.email,
+                metadata={"user_id": str(usuario_atual.id)}
+            )
+            customer_id = customer.id
+            usuario_atual.stripe_customer_id = customer_id
+            db.commit()
+
+        session = stripe.checkout.Session.create(
+            customer=customer_id,
+            payment_method_types=["card"],
+            line_items=[{
+                "price": STRIPE_PRICE_ID,
+                "quantity": 1,
+            }],
+            mode="subscription",
+            client_reference_id=str(usuario_atual.id),
+            success_url=CHECKOUT_SUCCESS_URL,
+            cancel_url=CHECKOUT_CANCEL_URL,
+            metadata={"user_id": str(usuario_atual.id)}
+        )
+
+        ip = extrair_ip(request)
+        registrar_log(
+            usuario_id=usuario_atual.id,
+            acao="checkout_recorrente_iniciado",
+            ip=ip,
+            detalhes=f"Checkout session {session.id} criada para plano Pro (Recorrente)"
+        )
+
+        return {"url": session.url}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Erro ao criar sessão Stripe: {str(exc)}"
+        )
+
+
+@app.post("/portal")
+@app.post("/api/assinaturas/portal")
+def abrir_portal_cliente(
+    usuario_atual: models.Usuario = Depends(auth.obter_usuario_atual)
+):
+    """Gera link para o Billing Portal da Stripe para troca de plano ou cancelamento."""
+    if not usuario_atual.stripe_customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Usuário ainda não possui uma assinatura ou cliente cadastrado no Stripe."
+        )
+
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=usuario_atual.stripe_customer_id,
+            return_url=FRONTEND_URL
+        )
+        return {"url": session.url}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Erro ao acessar Portal Stripe: {str(e)}")
+
+
+@app.post("/webhook")
+@app.post("/api/assinaturas/webhook")
+async def stripe_webhook(
+    request: Request,
+    stripe_signature: str = Header(None, alias="stripe-signature"),
+    db: Session = Depends(get_db)
+):
+    """Recebe e processa os 4 eventos do ciclo de vida SaaS com verificação de assinatura."""
+    if not STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="STRIPE_WEBHOOK_SECRET não configurado no servidor."
+        )
+
+    payload = await request.body()
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload=payload,
+            sig_header=stripe_signature,
+            secret=STRIPE_WEBHOOK_SECRET
+        )
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payload inválido")
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assinatura Stripe inválida")
+
+    event_type = event["type"]
+    data_object = event["data"]["object"]
+
+    # 1. Checkout de assinatura finalizado com sucesso
+    if event_type == "checkout.session.completed":
+        customer_id = data_object.get("customer")
+        subscription_id = data_object.get("subscription")
+        user_id = data_object.get("client_reference_id") or data_object.get("metadata", {}).get("user_id")
+
+        usuario = None
+        if user_id:
+            usuario = db.query(models.Usuario).filter(models.Usuario.id == int(user_id)).first()
+        if not usuario and customer_id:
+            usuario = db.query(models.Usuario).filter(models.Usuario.stripe_customer_id == customer_id).first()
+
+        if usuario:
+            usuario.plano = "pro"
+            usuario.status_assinatura = "active"
+            usuario.is_premium = True
+            usuario.stripe_customer_id = customer_id
+            usuario.stripe_subscription_id = subscription_id
+            db.commit()
+
+            registrar_log(
+                usuario_id=usuario.id,
+                acao="assinatura_iniciada",
+                ip=extrair_ip(request),
+                detalhes=f"Assinatura Pro ativada (Sub: {subscription_id}, Customer: {customer_id})"
+            )
+
+    # 2. Atualização de assinatura (troca de plano / renovação)
+    elif event_type == "customer.subscription.updated":
+        customer_id = data_object.get("customer")
+        status_ass = data_object.get("status")
+        
+        usuario = db.query(models.Usuario).filter(models.Usuario.stripe_customer_id == customer_id).first()
+        if usuario:
+            usuario.status_assinatura = status_ass
+            if status_ass == "active":
+                usuario.plano = "pro"
+                usuario.is_premium = True
+            else:
+                usuario.plano = "free"
+                usuario.is_premium = False
+            db.commit()
+
+            registrar_log(
+                usuario_id=usuario.id,
+                acao="assinatura_atualizada",
+                ip=extrair_ip(request),
+                detalhes=f"Assinatura atualizada para status '{status_ass}' (Plano: {usuario.plano})"
+            )
+
+    # 3. Assinatura cancelada / encerrada
+    elif event_type == "customer.subscription.deleted":
+        customer_id = data_object.get("customer")
+        usuario = db.query(models.Usuario).filter(models.Usuario.stripe_customer_id == customer_id).first()
+        if usuario:
+            usuario.plano = "free"
+            usuario.status_assinatura = "canceled"
+            usuario.is_premium = False
+            usuario.stripe_subscription_id = None
+            db.commit()
+
+            registrar_log(
+                usuario_id=usuario.id,
+                acao="assinatura_cancelada",
+                ip=extrair_ip(request),
+                detalhes=f"Assinatura cancelada. Usuário retornou ao plano Free."
+            )
+
+    # 4. Falha na cobrança da renovação
+    elif event_type == "invoice.payment_failed":
+        customer_id = data_object.get("customer")
+        usuario = db.query(models.Usuario).filter(models.Usuario.stripe_customer_id == customer_id).first()
+        if usuario:
+            usuario.status_assinatura = "past_due"
+            usuario.plano = "free"
+            usuario.is_premium = False
+            db.commit()
+
+            registrar_log(
+                usuario_id=usuario.id,
+                acao="falha_pagamento_assinatura",
+                ip=extrair_ip(request),
+                detalhes="Cobrança de renovação falhou. Conta marcada como inadimplente (past_due)."
+            )
+
+    return {"status": "success"}
+
+
+# =====================================================================
+# PAINEL ADMIN DE MÉTRICAS SAAS (MRR & PLANOS)
+# =====================================================================
+
+@app.get("/api/admin/metricas")
+def obter_metricas_admin(
+    usuario_atual: models.Usuario = Depends(auth.obter_usuario_atual),
+    db: Session = Depends(get_db)
+):
+    """Retorna a contagem de usuários por plano, assinaturas ativas e o MRR de teste."""
+    if usuario_atual.papel != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Acesso não autorizado: não pode {verbo} anúncios de outros utilizadores.",
+            detail="Acesso restrito ao perfil de Administrador."
         )
-    return user_id
 
+    # Agrupamento de usuários por plano
+    contagem_planos = db.query(
+        models.Usuario.plano,
+        func.count(models.Usuario.id)
+    ).group_by(models.Usuario.plano).all()
 
-def _ultimo_id(cursor):
-    if hasattr(cursor, "lastrowid") and cursor.lastrowid:
-        return cursor.lastrowid
-    if hasattr(cursor, "cursor") and hasattr(cursor.cursor, "lastrowid"):
-        return cursor.cursor.lastrowid
-    cursor.execute("SELECT last_insert_rowid() AS id")
-    row = cursor.fetchone()
-    return row["id"] if isinstance(row, dict) else row[0]
+    usuarios_por_plano = {plano: total for plano, total in contagem_planos}
+    if "free" not in usuarios_por_plano:
+        usuarios_por_plano["free"] = 0
+    if "pro" not in usuarios_por_plano:
+        usuarios_por_plano["pro"] = 0
 
+    # Total de assinaturas ativas
+    assinaturas_ativas = db.query(models.Usuario).filter(
+        models.Usuario.plano == "pro",
+        models.Usuario.status_assinatura == "active"
+    ).count()
 
-def buscar_item(cursor, item_id: int) -> dict:
-    cursor.execute("SELECT * FROM itens_marketplace WHERE id = %s", (item_id,))
-    item = cursor.fetchone()
-    if not item:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item não encontrado.")
-    return item
+    mrr_teste = assinaturas_ativas * VALOR_MENSAL_PRO_BRL
 
-
-# -------------------------------------------------------------
-# Endpoints Públicos (Vitrine e Consulta)
-# -------------------------------------------------------------
-
-@app.get("/api/itens", response_model=List[ItemSaida])
-def listar_itens(categoria_id: Optional[int] = None, modalidade: Optional[str] = None):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        query = "SELECT * FROM itens_marketplace WHERE status = 'disponivel'"
-        params = []
-        if categoria_id:
-            query += " AND categoria_id = %s"
-            params.append(categoria_id)
-        if modalidade:
-            query += " AND modalidade = %s"
-            params.append(modalidade)
-        query += " ORDER BY criado_em DESC"
-        cursor.execute(query, tuple(params))
-        return cursor.fetchall()
-    finally:
-        conn.close()
-
-
-@app.get("/api/itens/{item_id}", response_model=ItemSaida)
-def obter_item(item_id: int):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        return buscar_item(cursor, item_id)
-    finally:
-        conn.close()
-
-
-# -------------------------------------------------------------
-# Endpoints Privados (CRUD com isolamento por usuário)
-# -------------------------------------------------------------
-
-@app.get("/api/meus-itens", response_model=List[ItemSaida])
-def listar_meus_itens(current_user: dict = Depends(get_current_user)):
-    user_id = obter_user_id(current_user)
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT * FROM itens_marketplace WHERE usuario_id = %s ORDER BY criado_em DESC",
-            (user_id,),
-        )
-        return cursor.fetchall()
-    finally:
-        conn.close()
-
-
-@app.post("/api/itens", response_model=ItemSaida, status_code=status.HTTP_201_CREATED)
-def criar_item(item_in: ItemCreate, current_user: dict = Depends(get_current_user)):
-    user_id = obter_user_id(current_user)
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            """
-            INSERT INTO itens_marketplace
-            (usuario_id, categoria_id, titulo, descricao, condicao, modalidade, preco, imagem_url, is_premium, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'disponivel')
-            """,
-            (
-                user_id,
-                item_in.categoria_id,
-                item_in.titulo,
-                item_in.descricao,
-                item_in.condicao,
-                item_in.modalidade,
-                item_in.preco,
-                getattr(item_in, "imagem_url", None),
-                1 if current_user.get("is_premium") else 0,
-            ),
-        )
-        conn.commit()
-
-        novo_id = _ultimo_id(cursor)
-
-        novo_item = buscar_item(cursor, novo_id)
-    finally:
-        conn.close()
-
-    emitir_evento_log("item_anunciado", user_id, {"item_id": novo_id, "titulo": item_in.titulo})
-    return novo_item
-
-
-@app.put("/api/itens/{item_id}", response_model=ItemSaida)
-def atualizar_item(item_id: int, item_in: ItemUpdate, current_user: dict = Depends(get_current_user)):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        item = buscar_item(cursor, item_id)
-        user_id = exigir_dono_ou_admin(item, current_user, "alterar", "tentativa_edicao_nao_autorizada")
-
-        bruto = item_in.model_dump(exclude_unset=True) if hasattr(item_in, "model_dump") \
-            else item_in.dict(exclude_unset=True)
-        dados = {k: v for k, v in bruto.items() if k in CAMPOS_EDITAVEIS}
-        if dados:
-            set_clausulas = [f"{k} = %s" for k in dados]
-            valores = list(dados.values()) + [item_id]
-            cursor.execute(
-                f"UPDATE itens_marketplace SET {', '.join(set_clausulas)} WHERE id = %s",
-                tuple(valores),
-            )
-            conn.commit()
-        item_atualizado = buscar_item(cursor, item_id)
-    finally:
-        conn.close()
-
-    emitir_evento_log("item_editado", user_id, {"item_id": item_id})
-    return item_atualizado
-
-
-@app.delete("/api/itens/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remover_item(item_id: int, current_user: dict = Depends(get_current_user)):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        item = buscar_item(cursor, item_id)
-        user_id = exigir_dono_ou_admin(item, current_user, "remover", "tentativa_remocao_nao_autorizada")
-        cursor.execute("DELETE FROM itens_marketplace WHERE id = %s", (item_id,))
-        conn.commit()
-    finally:
-        conn.close()
-
-    emitir_evento_log("item_removido", user_id, {"item_id": item_id})
-    return None
-
-
-# -------------------------------------------------------------
-# Rotas por papel (RBAC)
-# -------------------------------------------------------------
-
-class ModeracaoIn(BaseModel):
-    acao: Literal["aprovar", "suspender"]
-    motivo: Optional[str] = None
-
-
-@app.patch("/api/itens/{item_id}/moderar")
-def moderar_item(
-    item_id: int,
-    dados: ModeracaoIn,
-    usuario: dict = Depends(verificar_papeis(PAPEIS_MODERACAO)),
-):
-    # Papel 'aluno' recebe 403 automaticamente, mesmo via curl, Postman ou Swagger.
-    novo_status = "disponivel" if dados.acao == "aprovar" else "suspenso"
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        buscar_item(cursor, item_id)
-        cursor.execute("UPDATE itens_marketplace SET status = %s WHERE id = %s", (novo_status, item_id))
-        conn.commit()
-    finally:
-        conn.close()
-
-    emitir_evento_log("item_moderado", obter_user_id(usuario),
-                      {"item_id": item_id, "acao": dados.acao, "motivo": dados.motivo})
-    return {"status": "item moderado com sucesso", "novo_status": novo_status,
-            "moderado_por": usuario.get("email") or obter_user_id(usuario)}
-
-
-@app.get("/api/admin/estatisticas")
-def ver_estatisticas_admin(usuario: dict = Depends(verificar_papeis(["admin"]))):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT status, COUNT(*) AS total FROM itens_marketplace GROUP BY status")
-        por_status = {r["status"]: r["total"] for r in cursor.fetchall()}
-    finally:
-        conn.close()
-    return {"total_itens": sum(por_status.values()), "itens_por_status": por_status}
-
-
-# -------------------------------------------------------------
-# Interesse, chat e pagamento
-#   Plano comum  -> pagamento direto entre as partes (sem intermediário)
-#   Anúncio premium -> pagamento intermediado pela Stripe
-# -------------------------------------------------------------
-
-class MensagemIn(BaseModel):
-    texto: str = Field(..., min_length=1, max_length=1000)
-
-
-def _nome(usuario: dict) -> str:
-    return usuario.get("nome") or usuario.get("email") or f"Usuário {obter_user_id(usuario)}"
-
-
-def _conversa_do_usuario(cursor, conversa_id: int, current_user: dict):
-    cursor.execute("SELECT * FROM conversas WHERE id = %s", (conversa_id,))
-    conv = cursor.fetchone()
-    if not conv:
-        raise HTTPException(status_code=404, detail="Conversa não encontrada.")
-    uid = str(obter_user_id(current_user))
-    if uid not in (str(conv["anunciante_id"]), str(conv["interessado_id"])):
-        emitir_evento_log("tentativa_acesso_conversa_nao_autorizada", uid, {"conversa_id": conversa_id})
-        raise HTTPException(status_code=403, detail="Acesso não autorizado: esta conversa pertence a outros utilizadores.")
-    return conv, uid
-
-
-@app.post("/api/itens/{item_id}/interesse", status_code=status.HTTP_201_CREATED)
-def registrar_interesse(item_id: int, current_user: dict = Depends(get_current_user)):
-    uid = str(obter_user_id(current_user))
-    nome = _nome(current_user)
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        item = buscar_item(cursor, item_id)
-        if item["status"] != "disponivel":
-            raise HTTPException(status_code=409, detail="Este anúncio não está mais disponível.")
-        if str(item["usuario_id"]) == uid:
-            raise HTTPException(status_code=400, detail="Você não pode demonstrar interesse no próprio anúncio.")
-        cursor.execute("SELECT * FROM conversas WHERE item_id = %s AND interessado_id = %s", (item_id, uid))
-        conv = cursor.fetchone()
-        criada = conv is None
-        if criada:
-            cursor.execute(
-                "INSERT INTO conversas (item_id, anunciante_id, interessado_id, interessado_nome) VALUES (%s, %s, %s, %s)",
-                (item_id, str(item["usuario_id"]), uid, nome))
-            conversa_id = _ultimo_id(cursor)
-            cursor.execute(
-                "INSERT INTO mensagens (conversa_id, remetente_id, texto) VALUES (%s, %s, %s)",
-                (conversa_id, uid, f"Olá! Tenho interesse em «{item['titulo']}»."))
-            conn.commit()
-        else:
-            conversa_id = conv["id"]
-    finally:
-        conn.close()
-    if criada:
-        emitir_evento_log("interesse_registrado", uid, {"item_id": item_id, "conversa_id": conversa_id})
-    return {"conversa_id": conversa_id, "criada": criada}
-
-
-@app.get("/api/conversas/nao-lidas")
-def contar_nao_lidas(current_user: dict = Depends(get_current_user)):
-    uid = str(obter_user_id(current_user))
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            """SELECT COUNT(*) AS total FROM mensagens m JOIN conversas c ON c.id = m.conversa_id
-               WHERE (c.anunciante_id = %s OR c.interessado_id = %s) AND m.remetente_id <> %s AND m.lida = 0""",
-            (uid, uid, uid))
-        return {"nao_lidas": cursor.fetchone()["total"]}
-    finally:
-        conn.close()
-
-
-@app.get("/api/conversas")
-def listar_conversas(current_user: dict = Depends(get_current_user)):
-    uid = str(obter_user_id(current_user))
-    nome = _nome(current_user)
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            """SELECT c.*, i.titulo, i.preco, i.is_premium,
-                 (SELECT COUNT(*) FROM mensagens m WHERE m.conversa_id = c.id AND m.remetente_id <> %s AND m.lida = 0) AS nao_lidas,
-                 (SELECT texto FROM mensagens m WHERE m.conversa_id = c.id ORDER BY m.id DESC LIMIT 1) AS ultima
-               FROM conversas c JOIN itens_marketplace i ON i.id = c.item_id
-               WHERE c.anunciante_id = %s OR c.interessado_id = %s ORDER BY c.id DESC""",
-            (uid, uid, uid))
-        linhas = cursor.fetchall()
-        mudou = False
-        for c in linhas:  # guarda o nome do anunciante na primeira vez que ele abre suas conversas
-            if str(c["anunciante_id"]) == uid and not c["anunciante_nome"]:
-                cursor.execute("UPDATE conversas SET anunciante_nome = %s WHERE id = %s", (nome, c["id"]))
-                c["anunciante_nome"] = nome
-                mudou = True
-        if mudou:
-            conn.commit()
-    finally:
-        conn.close()
-    saida = []
-    for c in linhas:
-        sou_anunciante = str(c["anunciante_id"]) == uid
-        saida.append({
-            "id": c["id"], "item_id": c["item_id"], "titulo": c["titulo"], "preco": c["preco"],
-            "pagamento": "stripe" if c["is_premium"] else "direto",
-            "meu_papel": "anunciante" if sou_anunciante else "interessado",
-            "outro_nome": (c["interessado_nome"] if sou_anunciante else c["anunciante_nome"]) or "Anunciante",
-            "nao_lidas": c["nao_lidas"], "ultima": c["ultima"],
-        })
-    return saida
-
-
-@app.get("/api/conversas/{conversa_id}/mensagens")
-def listar_mensagens(conversa_id: int, depois_de: int = 0, current_user: dict = Depends(get_current_user)):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        _, uid = _conversa_do_usuario(cursor, conversa_id, current_user)
-        cursor.execute("SELECT * FROM mensagens WHERE conversa_id = %s AND id > %s ORDER BY id", (conversa_id, depois_de))
-        msgs = cursor.fetchall()
-        cursor.execute("UPDATE mensagens SET lida = 1 WHERE conversa_id = %s AND remetente_id <> %s AND lida = 0",
-                       (conversa_id, uid))
-        conn.commit()
-    finally:
-        conn.close()
-    return {"mensagens": [{"id": m["id"], "minha": str(m["remetente_id"]) == uid, "texto": m["texto"],
-                           "criado_em": str(m["criado_em"])} for m in msgs]}
-
-
-@app.post("/api/conversas/{conversa_id}/mensagens", status_code=status.HTTP_201_CREATED)
-def enviar_mensagem(conversa_id: int, dados: MensagemIn, current_user: dict = Depends(get_current_user)):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        _, uid = _conversa_do_usuario(cursor, conversa_id, current_user)
-        cursor.execute("INSERT INTO mensagens (conversa_id, remetente_id, texto) VALUES (%s, %s, %s)",
-                       (conversa_id, uid, dados.texto.strip()))
-        conn.commit()
-    finally:
-        conn.close()
-    emitir_evento_log("mensagem_enviada", uid, {"conversa_id": conversa_id})
-    return {"mensagem": "enviada"}
-
-
-@app.post("/api/conversas/{conversa_id}/pagar")
-async def pagar_com_stripe(conversa_id: int, request: Request, current_user: dict = Depends(get_current_user)):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        conv, uid = _conversa_do_usuario(cursor, conversa_id, current_user)
-        item = buscar_item(cursor, conv["item_id"])
-    finally:
-        conn.close()
-    if uid != str(conv["interessado_id"]):
-        raise HTTPException(status_code=403, detail="Apenas o comprador pode iniciar o pagamento.")
-    if not item.get("is_premium"):
-        raise HTTPException(status_code=400, detail="Este anúncio usa pagamento direto entre as partes, sem intermediário.")
-    preco = float(item["preco"] or 0)
-    if preco <= 0:
-        raise HTTPException(status_code=400, detail="Anúncio sem valor para cobrança.")
-    if not STRIPE_SECRET_KEY:
-        raise HTTPException(status_code=503, detail="Pagamento Stripe não configurado no servidor.")
-    base = (PUBLIC_BASE_URL or str(request.base_url)).rstrip("/")
-    form = {
-        "mode": "payment",
-        "success_url": f"{base}/?pagamento=ok", "cancel_url": f"{base}/?pagamento=cancelado",
-        "line_items[0][quantity]": "1",
-        "line_items[0][price_data][currency]": "brl",
-        "line_items[0][price_data][unit_amount]": str(int(round(preco * 100))),
-        "line_items[0][price_data][product_data][name]": item["titulo"],
-        "metadata[item_id]": str(item["id"]), "metadata[conversa_id]": str(conversa_id), "metadata[comprador_id]": uid,
+    return {
+        "usuarios_por_plano": usuarios_por_plano,
+        "assinaturas_ativas": assinaturas_ativas,
+        "mrr_teste_brl": round(mrr_teste, 2)
     }
-    async with httpx.AsyncClient() as client:
-        try:
-            res = await client.post("https://api.stripe.com/v1/checkout/sessions", data=form,
-                                    auth=(STRIPE_SECRET_KEY, ""), timeout=15.0)
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Erro ao conectar à Stripe: {e}")
-    corpo = res.json()
-    if res.status_code >= 400:
-        raise HTTPException(status_code=502, detail=corpo.get("error", {}).get("message", "Erro na Stripe."))
-    emitir_evento_log("pagamento_stripe_iniciado", uid, {"item_id": item["id"], "conversa_id": conversa_id})
-    return {"url": corpo["url"]}
-
-
-# -------------------------------------------------------------
-# Upload de Fotos dos Materiais (MinIO)
-# -------------------------------------------------------------
-
-@app.post("/api/itens/{item_id}/foto")
-async def upload_foto_item(
-    item_id: int,
-    arquivo: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user),
-):
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        item = buscar_item(cursor, item_id)
-        user_id = exigir_dono_ou_admin(item, current_user, "alterar", "tentativa_upload_nao_autorizada")
-
-        foto_key = await upload_imagem_item(arquivo, item_id)
-        # imagem_url aponta para a rota abaixo, que lê a foto do bucket (privado) no MinIO.
-        cursor.execute(
-            "UPDATE itens_marketplace SET foto_key = %s, imagem_url = %s WHERE id = %s",
-            (foto_key, f"/api/fotos/{foto_key}", item_id),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    emitir_evento_log("foto_item_enviada", user_id, {"item_id": item_id, "foto_key": foto_key})
-    return {"mensagem": "Foto enviada com sucesso", "foto_key": foto_key, "imagem_url": f"/api/fotos/{foto_key}"}
-
-
-@app.get("/api/fotos/{chave:path}")
-def servir_foto(chave: str):
-    try:
-        obj = baixar_imagem(chave)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Foto não encontrada.")
-
-    def fluxo():
-        try:
-            yield from obj.stream(32 * 1024)
-        finally:
-            obj.close()
-            obj.release_conn()
-
-    return StreamingResponse(fluxo(), media_type=obj.headers.get("Content-Type", "application/octet-stream"))

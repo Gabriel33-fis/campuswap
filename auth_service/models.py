@@ -13,9 +13,14 @@ class Usuario(Base):
     # 3 Papéis do negócio: 'aluno', 'moderador' e 'admin'
     papel = Column(String(50), default="aluno", nullable=False)
     
-    # Campos para o Plano Premium (Stripe)
+    # Compatibilidade com a atividade anterior (Plano Premium pontual)
     is_premium = Column(Boolean, default=False, nullable=False)
+    
+    # Novos campos do SaaS Completo (Atividade 11 - Assinatura Recorrente)
+    plano = Column(String(20), default="free", nullable=False)
+    status_assinatura = Column(String(30), default="active", nullable=False)
     stripe_customer_id = Column(String(255), nullable=True)
+    stripe_subscription_id = Column(String(255), nullable=True)
 
 class RecuperacaoSenha(Base):
     __tablename__ = "recuperacoes_senha"
