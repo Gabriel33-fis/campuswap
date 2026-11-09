@@ -43,6 +43,7 @@
     header{backdrop-filter:blur(10px);background:rgba(255,255,255,.88)!important}
     .card-item:hover{transform:translateY(-3px);box-shadow:0 16px 32px -16px rgba(63,50,168,.35)}
     .card-item{transition:transform .2s,box-shadow .2s}
+    #btn-recuperacao:disabled{opacity:.5;cursor:not-allowed}
   </style>
 </head>
 <body class="min-h-screen flex flex-col justify-between antialiased">
@@ -311,13 +312,39 @@
   <!-- MODAIS -->
   <div id="modal-login" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-4 z-50">
     <div class="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md">
-      <div class="flex justify-between items-center mb-6"><h3 class="text-xl font-extrabold">Entrar na sua conta</h3><button onclick="fecharModais()" aria-label="Fechar" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button></div>
-      <form onsubmit="realizarLogin(event)" class="space-y-4">
-        <div><label class="block text-xs font-bold text-gray-600 mb-1">E-mail acadêmico</label><input type="email" id="login-email" required class="w-full p-2.5 border rounded-xl text-sm" placeholder="aluno@fatec.sp.gov.br"></div>
-        <div><label class="block text-xs font-bold text-gray-600 mb-1">Senha</label><input type="password" id="login-senha" required class="w-full p-2.5 border rounded-xl text-sm" placeholder="••••••••"></div>
+      <div class="flex justify-between items-center mb-6">
+        <h3 id="login-titulo" class="text-xl font-extrabold">Entrar na sua conta</h3>
+        <button onclick="fecharModais()" aria-label="Fechar" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
+      </div>
+
+      <!-- Tela: login -->
+      <form id="form-login" onsubmit="realizarLogin(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-gray-600 mb-1">E-mail acadêmico</label>
+          <input type="email" id="login-email" required class="w-full p-2.5 border rounded-xl text-sm" placeholder="aluno@fatec.sp.gov.br">
+        </div>
+        <div>
+          <div class="flex justify-between items-center mb-1">
+            <label for="login-senha" class="block text-xs font-bold text-gray-600">Senha</label>
+            <button type="button" onclick="mostrarEsqueciSenha()" class="text-xs font-bold hover:underline" style="color:var(--violet)">Esqueci minha senha</button>
+          </div>
+          <input type="password" id="login-senha" required class="w-full p-2.5 border rounded-xl text-sm" placeholder="••••••••">
+        </div>
         <p id="login-erro" class="text-red-500 text-xs font-bold hidden"></p>
         <button type="submit" class="w-full text-white py-2.5 rounded-xl font-bold text-sm" style="background:var(--violet)">Entrar</button>
         <p class="text-xs text-center text-gray-500">Ainda não tem conta? <button type="button" onclick="mostrarCadastro()" class="font-bold underline" style="color:var(--violet)">Criar conta</button></p>
+      </form>
+
+      <!-- Tela: esqueci minha senha -->
+      <form id="form-esqueci" onsubmit="handleEsqueciSenha(event)" class="space-y-4 hidden">
+        <p class="text-xs text-gray-600">Digite seu e-mail institucional cadastrado. Enviaremos um link de recuperação.</p>
+        <div>
+          <label for="recuperacao-email" class="block text-xs font-bold text-gray-600 mb-1">E-mail acadêmico</label>
+          <input type="email" id="recuperacao-email" required class="w-full p-2.5 border rounded-xl text-sm" placeholder="aluno@fatec.sp.gov.br">
+        </div>
+        <p id="recuperacao-feedback" role="status" class="hidden text-xs p-2.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200"></p>
+        <button type="submit" id="btn-recuperacao" class="w-full text-white py-2.5 rounded-xl font-bold text-sm" style="background:var(--violet)">Enviar link de recuperação</button>
+        <button type="button" onclick="mostrarTelaLogin()" class="w-full text-xs text-center text-gray-500 hover:underline">Voltar para o Login</button>
       </form>
     </div>
   </div>
@@ -384,7 +411,11 @@
       setTimeout(() => t.classList.add('translate-y-20', 'opacity-0'), 3500);
     }
 
-    function fecharModais() { ['modal-login','modal-cadastro','modal-item'].forEach(id => document.getElementById(id).classList.add('hidden')); }
+    // ===== Modais =====
+    function fecharModais() {
+      ['modal-login','modal-cadastro','modal-item'].forEach(id => document.getElementById(id).classList.add('hidden'));
+      mostrarTelaLogin(); // o modal de login sempre reabre na tela de login
+    }
     function mostrarLogin() { fecharModais(); document.getElementById('modal-login').classList.remove('hidden'); }
     function mostrarCadastro() { fecharModais(); document.getElementById('modal-cadastro').classList.remove('hidden'); }
     function abrirModalNovoItem() {
@@ -392,6 +423,48 @@
       fecharModais(); document.getElementById('modal-item').classList.remove('hidden');
     }
     document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharModais(); });
+
+    // ===== Recuperação de senha =====
+    function mostrarTelaLogin() {
+      document.getElementById('login-titulo').textContent = 'Entrar na sua conta';
+      document.getElementById('form-login').classList.remove('hidden');
+      document.getElementById('form-esqueci').classList.add('hidden');
+      const fb = document.getElementById('recuperacao-feedback');
+      fb.textContent = ''; fb.classList.add('hidden');
+    }
+
+    function mostrarEsqueciSenha() {
+      document.getElementById('login-titulo').textContent = 'Recuperar senha';
+      document.getElementById('form-login').classList.add('hidden');
+      document.getElementById('form-esqueci').classList.remove('hidden');
+      // reaproveita o e-mail já digitado no login
+      const campo = document.getElementById('recuperacao-email');
+      campo.value = document.getElementById('login-email').value;
+      campo.focus();
+    }
+
+    async function handleEsqueciSenha(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn-recuperacao');
+      const fb = document.getElementById('recuperacao-feedback');
+      const email = document.getElementById('recuperacao-email').value.trim();
+      btn.disabled = true; btn.textContent = 'Enviando...';
+      fb.classList.add('hidden');
+      try {
+        const res = await fetch(`${API_BASE}/api/forgot-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+        const data = await res.json().catch(() => ({}));
+        fb.textContent = data.message || 'Instruções enviadas para a sua caixa de entrada!';
+      } catch (err) {
+        fb.textContent = 'Erro ao conectar ao serviço de autenticação.';
+      } finally {
+        fb.classList.remove('hidden');
+        btn.disabled = false; btn.textContent = 'Enviar link de recuperação';
+      }
+    }
 
     function obterUsuarioLogadoId() {
       try {
