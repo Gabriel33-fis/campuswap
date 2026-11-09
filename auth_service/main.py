@@ -202,22 +202,30 @@ def reset_password(dados: schemas.RedefinirSenhaRequest, request: Request, db: S
             detail="Token inválido ou expirado"
         )
 
+    # 1. Busca o usuário correspondente ao token
     usuario = db.query(models.Usuario).filter(models.Usuario.id == reset_entry.usuario_id).first()
     if not usuario:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuário não encontrado"
+        )
 
+    # 2. Atualiza a senha gerando um novo hash seguro
     usuario.senha_hash = auth.gerar_hash_senha(dados.nova_senha)
+    
+    # 3. Invalida o token para impedir reutilização
     reset_entry.usado = True
     db.commit()
 
+    # 4. Registra no serviço de log
     registrar_log(
         usuario_id=usuario.id,
-        acao="redefinicao_senha",
+        acao="redefinicao_senha_sucesso",
         ip=ip,
-        detalhes="Senha redefinida com sucesso com token de recuperação"
+        detalhes=f"Senha redefinida com sucesso para {usuario.email}"
     )
 
-    return {"message": "Senha redefinida com sucesso!"}
+    return {"message": "Senha redefinida com sucesso! Você já pode fazer login."}
 
 # =====================================================================
 # ROTAS DO STRIPE (ATIVIDADE 7 - PLANO PREMIUM)
