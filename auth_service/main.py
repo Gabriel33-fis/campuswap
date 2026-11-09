@@ -6,8 +6,8 @@ from fastapi import FastAPI, HTTPException, Depends, Request, Response, Header, 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from prometheus_fastapi_instrumentator import Instrumentator
-
-from database import get_db, engine, Base
+from database import get_db
+import database
 import models
 import schemas
 import auth
@@ -52,7 +52,10 @@ def registrar_log(usuario_id, acao, ip=None, detalhes=None):
 
 # Cria as tabelas de autenticação no banco
 try:
-    Base.metadata.create_all(bind=engine)
+    engine_db = getattr(database, "engine", getattr(database, "motor", None))
+    base_db = getattr(database, "Base", getattr(models, "Base", None))
+    if engine_db and base_db:
+        base_db.metadata.create_all(bind=engine_db)
 except Exception as e:
     print(f"Aviso ao inicializar tabelas auth: {e}")
 
