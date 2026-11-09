@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Depends, Request, Response, Header, 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from prometheus_fastapi_instrumentator import Instrumentator
+
 from database import get_db
 import database
 import models
@@ -50,12 +51,12 @@ def registrar_log(usuario_id, acao, ip=None, detalhes=None):
     except Exception as e:
         print(f"Aviso log_service: {e}")
 
-# Cria as tabelas de autenticação no banco
+# Cria as tabelas de autenticação no banco de forma segura
 try:
-    engine_db = getattr(database, "engine", getattr(database, "motor", None))
-    base_db = getattr(database, "Base", getattr(models, "Base", None))
-    if engine_db and base_db:
-        base_db.metadata.create_all(bind=engine_db)
+    engine_obj = getattr(database, "engine", getattr(database, "motor", None))
+    base_obj = getattr(database, "Base", getattr(models, "Base", None))
+    if engine_obj and base_obj:
+        base_obj.metadata.create_all(bind=engine_obj)
 except Exception as e:
     print(f"Aviso ao inicializar tabelas auth: {e}")
 
@@ -205,7 +206,6 @@ def reset_password(dados: schemas.RedefinirSenhaRequest, request: Request, db: S
             detail="Token inválido ou expirado"
         )
 
-    # 1. Busca o usuário correspondente ao token
     usuario = db.query(models.Usuario).filter(models.Usuario.id == reset_entry.usuario_id).first()
     if not usuario:
         raise HTTPException(
@@ -213,14 +213,10 @@ def reset_password(dados: schemas.RedefinirSenhaRequest, request: Request, db: S
             detail="Usuário não encontrado"
         )
 
-    # 2. Atualiza a senha gerando um novo hash seguro
     usuario.senha_hash = auth.gerar_hash_senha(dados.nova_senha)
-    
-    # 3. Invalida o token para impedir reutilização
     reset_entry.usado = True
     db.commit()
 
-    # 4. Registra no serviço de log
     registrar_log(
         usuario_id=usuario.id,
         acao="redefinicao_senha_sucesso",
@@ -230,58 +226,12 @@ def reset_password(dados: schemas.RedefinirSenhaRequest, request: Request, db: S
 
     return {"message": "Senha redefinida com sucesso! Você já pode fazer login."}
 
-# =====================================================================
-# ROTAS DO STRIPE (ATIVIDADE 7 - PLANO PREMIUM)
-# =====================================================================
-
-@app.post("/checkout", response_model=schemas.CheckoutResponse)
-def criar_checkout_session(
-    request: Request,
-    usuario_atual: models.Usuario = Depends(auth.obter_usuario_atual)
-):
-    """Cria uma Checkout Session no Stripe associada ao ID do usuário."""
-    if not STRIPE_PRICE_ID:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="STRIPE_PRICE_ID não configurado no servidor."
-        )
-
-    try:
-        session = stripe.checkout.Session.create(
-            
-            line_items=[{
-                "price": STRIPE_PRICE_ID,
-                "quantity": 1,
-            }],
-            mode="subscription",
-            client_reference_id=str(usuario_atual.id),
-            customer_email=usuario_atual.email,
-            success_url=CHECKOUT_SUCCESS_URL,
-            cancel_url=CHECKOUT_CANCEL_URL,
-        )
-
-        ip = extrair_ip(request)
-        registrar_log(
-            usuario_id=usuario_atual.id,
-            acao="checkout_iniciado",
-            ip=ip,
-            detalhes=f"Checkout session {session.id} criada para plano premium"
-        )
-
-        return {"url": session.url}
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Erro ao criar sessão Stripe: {str(exc)}"
-        )
-
 @app.post("/webhook")
 async def stripe_webhook(
     request: Request,
     stripe_signature: str = Header(None, alias="stripe-signature"),
     db: Session = Depends(get_db)
 ):
-    """Recebe e processa eventos assíncronos do Stripe com verificação de assinatura."""
     if not STRIPE_WEBHOOK_SECRET:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -301,7 +251,6 @@ async def stripe_webhook(
     except stripe.error.SignatureVerificationError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assinatura Stripe inválida")
 
-    # Confirmação de pagamento bem-sucedido
     if event["type"] == "checkout.session.completed":
         session_obj = event["data"]["object"]
         usuario_id = session_obj.get("client_reference_id")
