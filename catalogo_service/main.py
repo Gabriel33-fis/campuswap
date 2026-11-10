@@ -305,116 +305,154 @@ def obter_foto(nome_foto: str):
         raise HTTPException(status_code=404, detail="Foto não encontrada")
     return Response(content=caminho.read_bytes(), media_type="image/jpeg")
 # =====================================================================
-# SISTEMA DE CONVERSAS E MENSAGENS (CHAT COM DIFERENCIACAO)
+# SISTEMA DE CONVERSAS E MENSAGENS (PERSISTÊNCIA EM DISCO)
 # =====================================================================
-_CONVERSAS_DB = []
-_MENSAGENS_DB = {}
+CHAT_STORAGE_FILE = FOTOS_DIR / "chat_dados.json"
+
+def _carregar_chat():
+    if CHAT_STORAGE_FILE.exists():
+        try:
+            with open(CHAT_STORAGE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    # Estrutura inicial caso o arquivo não exista
+    dados_padrao = {
+        "conversas": [
+            {
+                "id": 1,
+                "item_id": 1,
+                "titulo": "Interesse: Calculadora Casio fx-991 lacw",
+                "outro_nome": "Vendedor do Campus",
+                "ultima": "Olá! Está disponível sim. Tem interesse em retirar no campus?",
+                "meu_papel": "interessado",
+                "pagamento": "direto",
+                "nao_lidas": 0
+            }
+        ],
+        "mensagens": {
+            "1": [
+                {"id": 1, "texto": "Olá! Tenho interesse no seu anúncio. Ainda está disponível?", "minha": True},
+                {"id": 2, "texto": "Olá! Está disponível sim. Tem interesse em retirar no campus?", "minha": False}
+            ]
+        }
+    }
+    _salvar_chat(dados_padrao)
+    return dados_padrao
+
+def _salvar_chat(dados):
+    try:
+        with open(CHAT_STORAGE_FILE, "w", encoding="utf-8") as f:
+            json.dump(dados, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Erro ao salvar chat: {e}")
 
 @app.post("/api/itens/{item_id}/interesse")
 def manifestar_interesse_item(item_id: int, db: Session = Depends(get_db)):
     produto = db.query(models.Produto).filter(models.Produto.id == item_id).first()
     titulo_item = getattr(produto, "titulo", f"Item #{item_id}") if produto else f"Item #{item_id}"
-    vendedor_id = getattr(produto, "usuario_id", 1) if produto else 1
-
-    conversa_existente = next((c for c in _CONVERSAS_DB if c.get("item_id") == item_id), None)
     
-    if not conversa_existente:
-        cid = len(_CONVERSAS_DB) + 1
-        msg_inicial = f"Olá! Tenho interesse no seu anúncio '{titulo_item}'. Ainda está disponível?"
-        resposta_vendedor = f"Olá! Está disponível sim, em perfeito estado. Tem interesse em retirar no campus?"
+    dados = _carregar_chat()
+    conversas = dados["conversas"]
+    mensagens = dados["mensagens"]
+
+    existente = next((c for c in conversas if c.get("item_id") == item_id), None)
+    if not existente:
+        cid = len(conversas) + 1
+        msg1 = f"Olá! Tenho interesse no seu anúncio '{titulo_item}'."
+        msg2 = "Olá! Está disponível sim para entrega no campus."
         
         nova_conversa = {
             "id": cid,
             "item_id": item_id,
             "titulo": f"Interesse: {titulo_item}",
             "outro_nome": "Vendedor do Campus",
-            "ultima": resposta_vendedor,
+            "ultima": msg2,
             "meu_papel": "interessado",
             "pagamento": "direto",
             "nao_lidas": 0
         }
-        _CONVERSAS_DB.append(nova_conversa)
-        
-        _MENSAGENS_DB[cid] = [
-            {
-                "id": 1,
-                "texto": msg_inicial,
-                "minha": True
-            },
-            {
-                "id": 2,
-                "texto": resposta_vendedor,
-                "minha": False
-            }
+        conversas.append(nova_conversa)
+        mensagens[str(cid)] = [
+            {"id": 1, "texto": msg1, "minha": True},
+            {"id": 2, "texto": msg2, "minha": False}
         ]
+        _salvar_chat(dados)
         return {"status": "sucesso", "conversa_id": cid, "item_id": item_id}
     
-    return {"status": "sucesso", "conversa_id": conversa_existente["id"], "item_id": item_id}
+    return {"status": "sucesso", "conversa_id": existente["id"], "item_id": item_id}
 
 @app.get("/api/conversas")
 def listar_conversas():
-    return _CONVERSAS_DB
+    dados = _carregar_chat()
+    return dados.get("conversas", [])
 
 @app.get("/api/conversas/nao-lidas")
 def conversas_nao_lidas():
-    total_nao_lidas = sum(c.get("nao_lidas", 0) for c in _CONVERSAS_DB)
-    return {"total": len(_CONVERSAS_DB), "nao_lidas": total_nao_lidas}
+    dados = _carregar_chat()
+    conversas = dados.get("conversas", [])
+    total_nao_lidas = sum(c.get("nao_lidas", 0) for c in conversas)
+    return {"total": len(conversas), "nao_lidas": total_nao_lidas}
 
 @app.get("/api/conversas/{conversa_id}")
 def obter_conversa(conversa_id: int):
-    conversa = next((c for c in _CONVERSAS_DB if c["id"] == conversa_id), None)
+    dados = _carregar_chat()
+    conversa = next((c for c in dados.get("conversas", []) if c["id"] == conversa_id), None)
     if not conversa:
         raise HTTPException(status_code=404, detail="Conversa não encontrada")
     return conversa
 
 @app.get("/api/conversas/{conversa_id}/mensagens")
 def listar_mensagens_conversa(conversa_id: int, depois_de: int = 0):
-    for c in _CONVERSAS_DB:
+    dados = _carregar_chat()
+    for c in dados.get("conversas", []):
         if c["id"] == conversa_id:
             c["nao_lidas"] = 0
-            
-    todas_msgs = _MENSAGENS_DB.get(conversa_id, [])
+    _salvar_chat(dados)
+
+    todas_msgs = dados.get("mensagens", {}).get(str(conversa_id), [])
     msgs_filtradas = [m for m in todas_msgs if m["id"] > depois_de]
     return {"mensagens": msgs_filtradas}
 
 @app.post("/api/conversas/{conversa_id}/mensagens")
 async def enviar_mensagem(conversa_id: int, request: Request):
-    dados = await request.json()
-    texto = (dados.get("texto") or "").strip()
-    
+    corpo = await request.json()
+    texto = (corpo.get("texto") or "").strip()
     if not texto:
         raise HTTPException(status_code=400, detail="Texto da mensagem é obrigatório")
 
-    msgs = _MENSAGENS_DB.setdefault(conversa_id, [])
-    
-    # 1. Mensagem enviada por voce (balao violeta a direita)
+    dados = _carregar_chat()
+    mensagens = dados.setdefault("mensagens", {})
+    msgs_conversa = mensagens.setdefault(str(conversa_id), [])
+
+    # 1. Mensagem do comprador (violeta à direita)
     msg_usuario = {
-        "id": len(msgs) + 1,
+        "id": len(msgs_conversa) + 1,
         "texto": texto,
         "minha": True
     }
-    msgs.append(msg_usuario)
+    msgs_conversa.append(msg_usuario)
 
-    # 2. Resposta automatica do outro usuario (balao branco a esquerda)
-    respostas_mock = [
-        "Consigo fazer um desconto sim se fecharmos hoje!",
-        "Podemos combinar a entrega no intervalo das aulas.",
-        "Perfeito, podemos combinar então!",
-        "Fechado! Qualquer dúvida me avise por aqui."
+    # 2. Resposta do vendedor (branco com borda cinza à esquerda)
+    respostas = [
+        "Consigo fechar por esse valor sim!",
+        "Perfeito! Podemos nos encontrar amanhã no bloco central?",
+        "Combinado! Te aviso quando estiver a caminho.",
+        "Sem problemas, qualquer dúvida pode me mandar mensagem."
     ]
-    idx_resp = (len(msgs) // 2) % len(respostas_mock)
-    texto_resposta = respostas_mock[idx_resp]
-    
-    msg_outro = {
-        "id": len(msgs) + 1,
+    idx = (len(msgs_conversa) // 2) % len(respostas)
+    texto_resposta = respostas[idx]
+
+    msg_resposta = {
+        "id": len(msgs_conversa) + 1,
         "texto": texto_resposta,
         "minha": False
     }
-    msgs.append(msg_outro)
+    msgs_conversa.append(msg_resposta)
 
-    # Atualiza a ultima mensagem da conversa
-    for c in _CONVERSAS_DB:
+    for c in dados.get("conversas", []):
         if c["id"] == conversa_id:
             c["ultima"] = texto_resposta
 
+    _salvar_chat(dados)
     return {"status": "sucesso", "mensagem": msg_usuario}
