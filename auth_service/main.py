@@ -4,37 +4,43 @@ import stripe
 import requests
 from fastapi import FastAPI, HTTPException, Depends, Request, Response, Header, status
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, func
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from database import get_db
 import database
+from database import get_db
 import models
 import schemas
 import auth
 import email_service
 
-LOG_SERVICE_URL = os.getenv("LOG_SERVICE_URL", "http://log_service:6000")
+LOG_SERVICE_URL = os.getenv("LOG_SERVICE_URL", "http://log_service:6000")[cite: 3]
 
 # Configurações Stripe (Modo de Teste)
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")[cite: 3]
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID_PRO") or os.getenv("STRIPE_PRICE_ID")[cite: 3]
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")[cite: 3]
+
 CHECKOUT_SUCCESS_URL = os.getenv(
     "CHECKOUT_SUCCESS_URL",
     "https://gabriel-graciano-isw055.lapps.studio/?session_id={CHECKOUT_SESSION_ID}"
-)
+)[cite: 3]
 CHECKOUT_CANCEL_URL = os.getenv(
     "CHECKOUT_CANCEL_URL",
     "https://gabriel-graciano-isw055.lapps.studio/?status=cancelado"
-)
+)[cite: 3]
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://gabriel-graciano-isw055.lapps.studio")[cite: 3]
+
+VALOR_MENSAL_PRO_BRL = 19.90[cite: 3]
+
 
 def extrair_ip(request: Request) -> str:
     """Extrai o IP real considerando proxies reversos ou cliente direto."""
-    forwarded = request.headers.get("x-forwarded-for")
+    forwarded = request.headers.get("x-forwarded-for")[cite: 3]
     if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "desconhecido"
+        return forwarded.split(",")[0].strip()[cite: 3]
+    return request.client.host if request.client else "desconhecido"[cite: 3]
+
 
 def registrar_log(usuario_id, acao, ip=None, detalhes=None):
     try:
@@ -47,11 +53,12 @@ def registrar_log(usuario_id, acao, ip=None, detalhes=None):
                 "detalhes": detalhes
             },
             timeout=1.0
-        )
+        )[cite: 3]
     except Exception as e:
-        print(f"Aviso log_service: {e}")
+        print(f"Aviso log_service: {e}")[cite: 3]
 
-# Cria as tabelas de autenticação no banco de forma segura
+
+# Inicialização segura das tabelas
 try:
     engine_obj = getattr(database, "engine", getattr(database, "motor", None))
     base_obj = getattr(database, "Base", getattr(models, "Base", None))
@@ -60,10 +67,10 @@ try:
 except Exception as e:
     print(f"Aviso ao inicializar tabelas auth: {e}")
 
-app = FastAPI(title="Auth Service")
+app = FastAPI(title="CampusSwap - Auth Service")
 
-# Instrumentação Prometheus para expor métricas na rota /metrics
 Instrumentator().instrument(app).expose(app)
+
 
 @app.get("/health", tags=["Observabilidade"])
 def health_check(response: Response, db: Session = Depends(get_db)):
@@ -87,6 +94,7 @@ def health_check(response: Response, db: Session = Depends(get_db)):
             "error": str(exc)
         }
 
+
 @app.post("/register", status_code=status.HTTP_201_CREATED)
 def register(usuario_in: schemas.UsuarioCriar, request: Request, db: Session = Depends(get_db)):
     usuario_existente = db.query(models.Usuario).filter(models.Usuario.email == usuario_in.email).first()
@@ -101,7 +109,9 @@ def register(usuario_in: schemas.UsuarioCriar, request: Request, db: Session = D
         nome=usuario_in.nome,
         email=usuario_in.email,
         senha_hash=senha_hash,
-        papel=usuario_in.papel or "usuario"
+        papel=usuario_in.papel or "aluno",
+        plano="free",
+        status_assinatura="active"
     )
     db.add(novo_usuario)
     db.commit()
@@ -112,10 +122,11 @@ def register(usuario_in: schemas.UsuarioCriar, request: Request, db: Session = D
         usuario_id=novo_usuario.id,
         acao="registro",
         ip=ip,
-        detalhes=f"Novo usuário cadastrado com papel '{novo_usuario.papel}'"
+        detalhes=f"Novo usuário cadastrado com plano Free e papel '{novo_usuario.papel}'"
     )
 
     return {"message": "Usuário cadastrado com sucesso", "usuario_id": novo_usuario.id}
+
 
 @app.post("/login")
 def login(dados: schemas.LoginRequest, request: Request, db: Session = Depends(get_db)):
@@ -134,19 +145,23 @@ def login(dados: schemas.LoginRequest, request: Request, db: Session = Depends(g
             detail="Credenciais inválidas"
         )
     
+    plano_atual = getattr(usuario, "plano", "free")
+    status_ass = getattr(usuario, "status_assinatura", "active")
+    is_pro = plano_atual == "pro" and status_ass == "active"
+
     token = auth.criar_access_token(
         usuario_id=usuario.id,
         email=usuario.email,
         papel=usuario.papel,
         nome=usuario.nome,
-        is_premium=bool(usuario.is_premium)
+        is_premium=is_pro
     )
 
     registrar_log(
         usuario_id=usuario.id,
         acao="login",
         ip=ip,
-        detalhes=f"Login realizado pelo usuário '{usuario.nome}' [{usuario.papel}]"
+        detalhes=f"Login realizado por '{usuario.nome}' [{usuario.papel} | Plano: {plano_atual}]"
     )
 
     return {
@@ -154,14 +169,28 @@ def login(dados: schemas.LoginRequest, request: Request, db: Session = Depends(g
         "token_type": "bearer",
         "usuario_nome": usuario.nome,
         "papel": usuario.papel,
-        "is_premium": usuario.is_premium
+        "plano": plano_atual,
+        "status_assinatura": status_ass,
+        "is_premium": is_pro
     }
 
-@app.get("/me", response_model=schemas.UsuarioResponse)
+
+@app.get("/me")
+@app.get("/api/usuarios/me")
 def obter_usuario_me(
     usuario_atual: models.Usuario = Depends(auth.obter_usuario_atual)
 ):
-    return usuario_atual
+    return {
+        "id": usuario_atual.id,
+        "nome": usuario_atual.nome,
+        "email": usuario_atual.email,
+        "papel": usuario_atual.papel,
+        "plano": getattr(usuario_atual, "plano", "free"),
+        "status_assinatura": getattr(usuario_atual, "status_assinatura", "active"),
+        "is_premium": getattr(usuario_atual, "plano", "free") == "pro",
+        "stripe_customer_id": getattr(usuario_atual, "stripe_customer_id", None)
+    }
+
 
 @app.post("/forgot-password")
 def forgot_password(dados: schemas.EsqueciSenhaRequest, request: Request, db: Session = Depends(get_db)):
@@ -192,6 +221,7 @@ def forgot_password(dados: schemas.EsqueciSenhaRequest, request: Request, db: Se
 
     return {"message": "E-mail de recuperação enviado com sucesso."}
 
+
 @app.post("/reset-password")
 def reset_password(dados: schemas.RedefinirSenhaRequest, request: Request, db: Session = Depends(get_db)):
     ip = extrair_ip(request)
@@ -208,10 +238,7 @@ def reset_password(dados: schemas.RedefinirSenhaRequest, request: Request, db: S
 
     usuario = db.query(models.Usuario).filter(models.Usuario.id == reset_entry.usuario_id).first()
     if not usuario:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Usuário não encontrado"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado")
 
     usuario.senha_hash = auth.gerar_hash_senha(dados.nova_senha)
     reset_entry.usado = True
@@ -219,14 +246,91 @@ def reset_password(dados: schemas.RedefinirSenhaRequest, request: Request, db: S
 
     registrar_log(
         usuario_id=usuario.id,
-        acao="redefinicao_senha_sucesso",
+        acao="redefinicao_senha",
         ip=ip,
-        detalhes=f"Senha redefinida com sucesso para {usuario.email}"
+        detalhes="Senha redefinida com sucesso com token de recuperação"
     )
 
-    return {"message": "Senha redefinida com sucesso! Você já pode fazer login."}
+    return {"message": "Senha redefinida com sucesso!"}
+
+
+@app.post("/checkout")
+@app.post("/api/assinaturas/checkout")
+def criar_checkout_session(
+    request: Request,
+    usuario_atual: models.Usuario = Depends(auth.obter_usuario_atual),
+    db: Session = Depends(get_db)
+):
+    if not STRIPE_PRICE_ID:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="STRIPE_PRICE_ID não configurado no servidor."
+        )
+
+    try:
+        customer_id = usuario_atual.stripe_customer_id
+        if not customer_id:
+            customer = stripe.Customer.create(
+                email=usuario_atual.email,
+                metadata={"user_id": str(usuario_atual.id)}
+            )
+            customer_id = customer.id
+            usuario_atual.stripe_customer_id = customer_id
+            db.commit()
+
+        session = stripe.checkout.Session.create(
+            customer=customer_id,
+            payment_method_types=["card"],
+            line_items=[{
+                "price": STRIPE_PRICE_ID,
+                "quantity": 1,
+            }],
+            mode="subscription",
+            client_reference_id=str(usuario_atual.id),
+            success_url=CHECKOUT_SUCCESS_URL,
+            cancel_url=CHECKOUT_CANCEL_URL,
+            metadata={"user_id": str(usuario_atual.id)}
+        )
+
+        ip = extrair_ip(request)
+        registrar_log(
+            usuario_id=usuario_atual.id,
+            acao="checkout_recorrente_iniciado",
+            ip=ip,
+            detalhes=f"Checkout session {session.id} criada para plano Pro (Recorrente)"
+        )
+
+        return {"url": session.url}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Erro ao criar sessão Stripe: {str(exc)}"
+        )
+
+
+@app.post("/portal")
+@app.post("/api/assinaturas/portal")
+def abrir_portal_cliente(
+    usuario_atual: models.Usuario = Depends(auth.obter_usuario_atual)
+):
+    if not usuario_atual.stripe_customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Usuário ainda não possui uma assinatura ou cliente cadastrado no Stripe."
+        )
+
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=usuario_atual.stripe_customer_id,
+            return_url=FRONTEND_URL
+        )
+        return {"url": session.url}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Erro ao acessar Portal Stripe: {str(e)}")
+
 
 @app.post("/webhook")
+@app.post("/api/assinaturas/webhook")
 async def stripe_webhook(
     request: Request,
     stripe_signature: str = Header(None, alias="stripe-signature"),
@@ -251,22 +355,124 @@ async def stripe_webhook(
     except stripe.error.SignatureVerificationError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assinatura Stripe inválida")
 
-    if event["type"] == "checkout.session.completed":
-        session_obj = event["data"]["object"]
-        usuario_id = session_obj.get("client_reference_id")
+    event_type = event["type"]
+    data_object = event["data"]["object"]
 
-        if usuario_id:
-            usuario = db.query(models.Usuario).filter(models.Usuario.id == int(usuario_id)).first()
-            if usuario:
+    if event_type == "checkout.session.completed":
+        customer_id = data_object.get("customer")
+        subscription_id = data_object.get("subscription")
+        user_id = data_object.get("client_reference_id") or data_object.get("metadata", {}).get("user_id")
+
+        usuario = None
+        if user_id:
+            usuario = db.query(models.Usuario).filter(models.Usuario.id == int(user_id)).first()
+        if not usuario and customer_id:
+            usuario = db.query(models.Usuario).filter(models.Usuario.stripe_customer_id == customer_id).first()
+
+        if usuario:
+            usuario.plano = "pro"
+            usuario.status_assinatura = "active"
+            usuario.is_premium = True
+            usuario.stripe_customer_id = customer_id
+            usuario.stripe_subscription_id = subscription_id
+            db.commit()
+
+            registrar_log(
+                usuario_id=usuario.id,
+                acao="assinatura_iniciada",
+                ip=extrair_ip(request),
+                detalhes=f"Assinatura Pro ativada (Sub: {subscription_id}, Customer: {customer_id})"
+            )
+
+    elif event_type == "customer.subscription.updated":
+        customer_id = data_object.get("customer")
+        status_ass = data_object.get("status")
+        
+        usuario = db.query(models.Usuario).filter(models.Usuario.stripe_customer_id == customer_id).first()
+        if usuario:
+            usuario.status_assinatura = status_ass
+            if status_ass == "active":
+                usuario.plano = "pro"
                 usuario.is_premium = True
-                usuario.stripe_customer_id = session_obj.get("customer")
-                db.commit()
+            else:
+                usuario.plano = "free"
+                usuario.is_premium = False
+            db.commit()
 
-                registrar_log(
-                    usuario_id=usuario.id,
-                    acao="upgrade_premium",
-                    ip=extrair_ip(request),
-                    detalhes=f"Usuário {usuario.email} promovido a Premium via Stripe (Customer: {usuario.stripe_customer_id})"
-                )
+            registrar_log(
+                usuario_id=usuario.id,
+                acao="assinatura_atualizada",
+                ip=extrair_ip(request),
+                detalhes=f"Assinatura atualizada para status '{status_ass}' (Plano: {usuario.plano})"
+            )
+
+    elif event_type == "customer.subscription.deleted":
+        customer_id = data_object.get("customer")
+        usuario = db.query(models.Usuario).filter(models.Usuario.stripe_customer_id == customer_id).first()
+        if usuario:
+            usuario.plano = "free"
+            usuario.status_assinatura = "canceled"
+            usuario.is_premium = False
+            usuario.stripe_subscription_id = None
+            db.commit()
+
+            registrar_log(
+                usuario_id=usuario.id,
+                acao="assinatura_cancelada",
+                ip=extrair_ip(request),
+                detalhes=f"Assinatura cancelada. Usuário retornou ao plano Free."
+            )
+
+    elif event_type == "invoice.payment_failed":
+        customer_id = data_object.get("customer")
+        usuario = db.query(models.Usuario).filter(models.Usuario.stripe_customer_id == customer_id).first()
+        if usuario:
+            usuario.status_assinatura = "past_due"
+            usuario.plano = "free"
+            usuario.is_premium = False
+            db.commit()
+
+            registrar_log(
+                usuario_id=usuario.id,
+                acao="falha_pagamento_assinatura",
+                ip=extrair_ip(request),
+                detalhes="Cobrança de renovação falhou. Conta marcada como inadimplente (past_due)."
+            )
 
     return {"status": "success"}
+
+
+@app.get("/api/admin/metricas")
+def obter_metricas_admin(
+    usuario_atual: models.Usuario = Depends(auth.obter_usuario_atual),
+    db: Session = Depends(get_db)
+):
+    if usuario_atual.papel != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso restrito ao perfil de Administrador."
+        )
+
+    contagem_planos = db.query(
+        models.Usuario.plano,
+        func.count(models.Usuario.id)
+    ).group_by(models.Usuario.plano).all()
+
+    usuarios_por_plano = {plano: total for plano, total in contagem_planos}
+    if "free" not in usuarios_por_plano:
+        usuarios_por_plano["free"] = 0
+    if "pro" not in usuarios_por_plano:
+        usuarios_por_plano["pro"] = 0
+
+    assinaturas_ativas = db.query(models.Usuario).filter(
+        models.Usuario.plano == "pro",
+        models.Usuario.status_assinatura == "active"
+    ).count()
+
+    mrr_teste = assinaturas_ativas * VALOR_MENSAL_PRO_BRL
+
+    return {
+        "usuarios_por_plano": usuarios_por_plano,
+        "assinaturas_ativas": assinaturas_ativas,
+        "mrr_teste_brl": round(mrr_teste, 2)
+    }
