@@ -32,7 +32,7 @@ CHECKOUT_CANCEL_URL = os.getenv(
 )
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://gabriel-graciano-isw055.lapps.studio")
 
-VALOR_MENSAL_PRO_BRL = 19.90
+VALOR_MENSAL_PRO_BRL = 9.90
 
 
 def extrair_ip(request: Request) -> str:
