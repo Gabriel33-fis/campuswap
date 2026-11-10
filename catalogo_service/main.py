@@ -46,7 +46,7 @@ except Exception as e:
     minio_client = None
     print(f"Aviso MinIO: {e}")
 
-# Inicialização de tabelas
+# Criação de tabelas defensiva
 try:
     engine_obj = getattr(database, "engine", getattr(database, "motor", None))
     base_obj = getattr(database, "Base", getattr(models, "Base", None))
@@ -60,7 +60,7 @@ app = FastAPI(title="CampusSwap - Catalogo Service")
 Instrumentator().instrument(app).expose(app)
 
 
-# Rota principal (Interface do CampusSwap)
+# Rota principal (Serve o frontend)
 @app.get("/", response_class=HTMLResponse)
 def pagina_inicial():
     caminho_html = Path(__file__).parent / "index.html"
@@ -70,7 +70,7 @@ def pagina_inicial():
 
 
 # =====================================================================
-# PROXY PARA O AUTH SERVICE (Permite login e registo a partir da raiz)
+# PROXY PARA O AUTH SERVICE (Comunicação inter-serviços)
 # =====================================================================
 
 @app.post("/api/register")
@@ -188,3 +188,27 @@ def listar_produtos(db: Session = Depends(get_db)):
             pass
 
     return lista
+
+
+@app.post("/api/itens")
+async def criar_item(request: Request, db: Session = Depends(get_db)):
+    dados = await request.json()
+    novo = models.Produto(
+        titulo=dados.get("titulo", "Material"),
+        descricao=dados.get("descricao", ""),
+        preco=dados.get("preco", 0.0),
+        modalidade=dados.get("modalidade", "venda"),
+        imagem_url=dados.get("imagem_url"),
+        usuario_id=dados.get("usuario_id", 1)
+    )
+    db.add(novo)
+    db.commit()
+    db.refresh(novo)
+
+    if r:
+        try:
+            r.delete("catalogo_produtos")
+        except Exception:
+            pass
+
+    return {"message": "Item criado", "id": novo.id}

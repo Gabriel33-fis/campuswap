@@ -36,7 +36,6 @@
     details.faq summary::-webkit-details-marker{display:none}
     details.faq summary::after{content:"+";color:var(--violet);font-size:1.4rem;line-height:1}
     details.faq[open] summary::after{content:"–"}
-    /* Polimento da área logada */
     #visao-autenticada .bg-white{border-radius:20px}
     #visao-autenticada .shadow-sm{box-shadow:0 1px 2px rgba(27,27,58,.04),0 8px 24px -12px rgba(27,27,58,.12)}
     #visao-autenticada .border-gray-200{border-color:var(--line)}
@@ -66,7 +65,7 @@
     </div>
   </header>
 
-  <!-- ================= LANDING ================= -->
+  <!-- LANDING -->
   <div id="visao-publica">
     <section class="hero">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 py-16 lg:py-24 grid lg:grid-cols-2 gap-12 items-center">
@@ -164,7 +163,7 @@
     </section>
   </div>
 
-  <!-- ================= ÁREA LOGADA ================= -->
+  <!-- ÁREA LOGADA -->
   <div id="visao-autenticada" class="hidden flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6">
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
       <aside class="lg:col-span-3 space-y-5">
@@ -193,9 +192,9 @@
 
         <div class="p-5 rounded-2xl shadow-md text-white" style="background:var(--ink)">
           <span class="text-xs font-bold" style="color:var(--lime)">Plano atual</span>
-          <h5 id="badge-plano" class="text-lg font-extrabold mt-1">Plano PRO Campus ⭐</h5>
-          <p class="text-xs text-indigo-200 mt-2 mb-4 leading-relaxed">Destaque ativo para seus materiais e acesso às estatísticas completas.</p>
-          <button onclick="iniciarCheckoutStripe()" class="btn-main w-full text-xs !py-2.5 !shadow-none"><i class="fa-solid fa-bolt mr-1"></i> Fazer upgrade para Premium</button>
+          <h5 id="badge-plano" class="text-lg font-extrabold mt-1">Plano Free</h5>
+          <p id="badge-plano-desc" class="text-xs text-indigo-200 mt-2 mb-4 leading-relaxed">Publique seus materiais e acerte entregas com colegas do campus.</p>
+          <button id="btn-upgrade-stripe" onclick="iniciarCheckoutStripe()" class="btn-main w-full text-xs !py-2.5 !shadow-none"><i class="fa-solid fa-bolt mr-1"></i> Fazer upgrade para Premium</button>
         </div>
       </aside>
 
@@ -209,7 +208,7 @@
             <div class="bg-white p-4 border border-gray-200 shadow-sm"><span class="text-xs text-gray-500 font-bold">Meus itens</span><p class="display text-3xl font-extrabold mt-1" id="kpi-meus-itens">0</p><span class="text-xs text-green-600 font-bold">Ativos</span></div>
             <div class="bg-white p-4 border border-gray-200 shadow-sm"><span class="text-xs text-gray-500 font-bold">No campus</span><p class="display text-3xl font-extrabold mt-1" style="color:var(--violet)" id="kpi-total-campus">0</p><span class="text-xs font-bold" style="color:var(--violet)">Disponíveis</span></div>
             <div class="bg-white p-4 border border-gray-200 shadow-sm"><span class="text-xs text-gray-500 font-bold">Valor em circulação</span><p class="display text-3xl font-extrabold text-green-600 mt-1" id="kpi-economia">R$ 0,00</p><span class="text-xs text-green-700 font-bold">Economia circular</span></div>
-            <div class="bg-white p-4 border border-gray-200 shadow-sm"><span class="text-xs text-gray-500 font-bold">Status da conta</span><p class="text-sm font-extrabold mt-3 truncate" id="kpi-status-conta">Estudante Premium</p><span class="text-xs text-blue-600 font-bold"><i class="fa-solid fa-circle-check"></i> Verificada</span></div>
+            <div class="bg-white p-4 border border-gray-200 shadow-sm"><span class="text-xs text-gray-500 font-bold">Status da conta</span><p class="text-sm font-extrabold mt-3 truncate" id="kpi-status-conta">Estudante Free</p><span class="text-xs text-blue-600 font-bold"><i class="fa-solid fa-circle-check"></i> Verificada</span></div>
           </div>
           <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div class="lg:col-span-2 bg-white p-5 border border-gray-200 shadow-sm">
@@ -290,7 +289,7 @@
                   <div><label class="block text-xs font-bold text-gray-500 mb-1">Nome completo</label><input type="text" id="perfil-campo-nome" readonly class="w-full p-2.5 bg-gray-50 border rounded-xl text-sm font-bold"></div>
                   <div><label class="block text-xs font-bold text-gray-500 mb-1">E-mail acadêmico</label><input type="text" id="perfil-campo-email" readonly class="w-full p-2.5 bg-gray-50 border rounded-xl text-sm font-bold"></div>
                   <div><label class="block text-xs font-bold text-gray-500 mb-1">Nível de acesso</label><span class="inline-flex px-3 py-1 rounded-lg text-xs font-black bg-indigo-100 text-indigo-800">Estudante verificado</span></div>
-                  <div><label class="block text-xs font-bold text-gray-500 mb-1">Assinatura</label><span class="inline-flex px-3 py-1 rounded-lg text-xs font-black bg-green-100 text-green-800">Plano PRO Campus ⭐</span></div>
+                  <div><label class="block text-xs font-bold text-gray-500 mb-1">Assinatura</label><span id="perfil-campo-plano" class="inline-flex px-3 py-1 rounded-lg text-xs font-black bg-gray-100 text-gray-700">Plano Free</span></div>
                 </div>
                 <div class="pt-4 border-t border-gray-100 flex justify-end"><button onclick="mostrarToast('Dados sincronizados com o servidor.')" class="bg-gray-100 hover:bg-gray-200 font-bold px-4 py-2 rounded-xl text-xs">Atualizar informações</button></div>
               </div>
@@ -317,7 +316,6 @@
         <button onclick="fecharModais()" aria-label="Fechar" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
       </div>
 
-      <!-- Tela: login -->
       <form id="form-login" onsubmit="realizarLogin(event)" class="space-y-4">
         <div>
           <label class="block text-xs font-bold text-gray-600 mb-1">E-mail acadêmico</label>
@@ -335,7 +333,6 @@
         <p class="text-xs text-center text-gray-500">Ainda não tem conta? <button type="button" onclick="mostrarCadastro()" class="font-bold underline" style="color:var(--violet)">Criar conta</button></p>
       </form>
 
-      <!-- Tela: esqueci minha senha -->
       <form id="form-esqueci" onsubmit="handleEsqueciSenha(event)" class="space-y-4 hidden">
         <p class="text-xs text-gray-600">Digite seu e-mail institucional cadastrado. Enviaremos um link de recuperação.</p>
         <div>
@@ -411,10 +408,10 @@
       setTimeout(() => t.classList.add('translate-y-20', 'opacity-0'), 3500);
     }
 
-    // ===== Modais =====
+    // Modais
     function fecharModais() {
       ['modal-login','modal-cadastro','modal-item'].forEach(id => document.getElementById(id).classList.add('hidden'));
-      mostrarTelaLogin(); // o modal de login sempre reabre na tela de login
+      mostrarTelaLogin();
     }
     function mostrarLogin() { fecharModais(); document.getElementById('modal-login').classList.remove('hidden'); }
     function mostrarCadastro() { fecharModais(); document.getElementById('modal-cadastro').classList.remove('hidden'); }
@@ -424,7 +421,7 @@
     }
     document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharModais(); });
 
-    // ===== Recuperação de senha =====
+    // Recuperação de senha
     function mostrarTelaLogin() {
       document.getElementById('login-titulo').textContent = 'Entrar na sua conta';
       document.getElementById('form-login').classList.remove('hidden');
@@ -437,7 +434,6 @@
       document.getElementById('login-titulo').textContent = 'Recuperar senha';
       document.getElementById('form-login').classList.add('hidden');
       document.getElementById('form-esqueci').classList.remove('hidden');
-      // reaproveita o e-mail já digitado no login
       const campo = document.getElementById('recuperacao-email');
       campo.value = document.getElementById('login-email').value;
       campo.focus();
@@ -479,7 +475,6 @@
       } catch (e) { return null; }
     }
     const ehMeu = item => { const id = obterUsuarioLogadoId(); return id != null && String(item.usuario_id) === String(id); };
-    const abrirModalItem = abrirModalNovoItem;
 
     function renderizarMeusAnuncios() {
       const c = document.getElementById('grid-meus-itens');
@@ -532,6 +527,7 @@
       });
     }
 
+    // ATUALIZAÇÃO VISUAL DINÂMICA DO PLANO
     function atualizarEstadoVisual() {
       const userRaw = localStorage.getItem('usuario');
       const nav = document.getElementById('nav-actions');
@@ -542,6 +538,8 @@
       if (logado) {
         const user = JSON.parse(userRaw);
         const nome = user.nome || user.email.split('@')[0];
+        const isPro = !!(user.is_premium || user.plano === 'pro');
+
         document.getElementById('user-display-name').textContent = nome;
         document.getElementById('user-display-email').textContent = user.email;
         document.getElementById('saudacao-user').textContent = `Bem-vindo de volta, ${nome}!`;
@@ -549,9 +547,40 @@
         document.getElementById('perfil-campo-nome').value = nome;
         document.getElementById('perfil-campo-email').value = user.email;
         document.getElementById('perfil-avatar-letra').textContent = nome.charAt(0).toUpperCase();
+
+        const badgePlano = document.getElementById('badge-plano');
+        const badgePlanoDesc = document.getElementById('badge-plano-desc');
+        const btnUpgrade = document.getElementById('btn-upgrade-stripe');
+
+        if (badgePlano) {
+          badgePlano.textContent = isPro ? 'Plano PRO Campus ⭐' : 'Plano Free';
+        }
+        if (badgePlanoDesc) {
+          badgePlanoDesc.textContent = isPro
+            ? 'Destaque ativo para seus materiais e acesso às estatísticas completas.'
+            : 'Publique seus materiais e negocie entregas diretamente pelo campus.';
+        }
+        if (btnUpgrade) {
+          btnUpgrade.classList.toggle('hidden', isPro);
+        }
+
+        const kpiStatus = document.getElementById('kpi-status-conta');
+        if (kpiStatus) {
+          kpiStatus.textContent = isPro ? 'Estudante Premium' : 'Estudante Free';
+        }
+
+        const perfilPlano = document.getElementById('perfil-campo-plano');
+        if (perfilPlano) {
+          perfilPlano.textContent = isPro ? 'Plano PRO Campus ⭐' : 'Plano Free';
+          perfilPlano.className = isPro
+            ? 'inline-flex px-3 py-1 rounded-lg text-xs font-black bg-green-100 text-green-800'
+            : 'inline-flex px-3 py-1 rounded-lg text-xs font-black bg-gray-100 text-gray-700';
+        }
+
         let foto = localStorage.getItem('usuario_foto');
         if (foto && foto.startsWith('blob:')) { localStorage.removeItem('usuario_foto'); foto = null; }
         if (foto) atualizarFotoAvatar(foto);
+
         nav.innerHTML = `
           <button onclick="abrirModalNovoItem()" class="hidden sm:flex btn-main !py-1.5 !px-3 text-xs !shadow-none items-center gap-1"><i class="fa-solid fa-plus"></i> Anunciar</button>
           <button onclick="mudarAba('perfil')" class="flex items-center space-x-2 bg-gray-50 hover:bg-indigo-50 border border-gray-200 px-3 py-1.5 rounded-lg" title="Meu perfil">
@@ -565,63 +594,114 @@
     }
 
     function fazerLogout() {
-      localStorage.removeItem('token'); localStorage.removeItem('usuario');
-      atualizarEstadoVisual(); mostrarToast('Sessão encerrada com sucesso.');
+      localStorage.removeItem('token');
+      localStorage.removeItem('usuario');
+      atualizarEstadoVisual();
+      mostrarToast('Sessão encerrada com sucesso.');
     }
 
     async function realizarLogin(e) {
       e.preventDefault();
-      const erroEl = document.getElementById('login-erro'); erroEl.classList.add('hidden');
+      const erroEl = document.getElementById('login-erro');
+      erroEl.classList.add('hidden');
       const email = document.getElementById('login-email').value;
       const senha = document.getElementById('login-senha').value;
       try {
-        const res = await fetch(`${API_BASE}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, senha }) });
+        const res = await fetch(`${API_BASE}/api/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, senha })
+        });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Falha de login');
         localStorage.setItem('token', data.access_token);
-        localStorage.setItem('usuario', JSON.stringify({ nome: data.usuario_nome || email.split('@')[0], email, papel: data.papel, is_premium: data.is_premium, usuario_id: data.usuario_id }));
-        fecharModais(); atualizarEstadoVisual(); mudarAba('overview');
+        localStorage.setItem('usuario', JSON.stringify({
+          nome: data.usuario_nome || email.split('@')[0],
+          email,
+          papel: data.papel,
+          plano: data.plano || 'free',
+          status_assinatura: data.status_assinatura || 'active',
+          is_premium: !!data.is_premium,
+          usuario_id: data.usuario_id
+        }));
+        fecharModais();
+        atualizarEstadoVisual();
+        mudarAba('overview');
         mostrarToast(`Bem-vindo, ${data.usuario_nome || email}!`);
-      } catch (err) { erroEl.textContent = err.message; erroEl.classList.remove('hidden'); }
+      } catch (err) {
+        erroEl.textContent = err.message;
+        erroEl.classList.remove('hidden');
+      }
     }
 
     async function realizarCadastro(e) {
       e.preventDefault();
-      const erroEl = document.getElementById('cad-erro'); erroEl.classList.add('hidden');
-      const nome = document.getElementById('cad-nome').value, email = document.getElementById('cad-email').value, senha = document.getElementById('cad-senha').value;
+      const erroEl = document.getElementById('cad-erro');
+      erroEl.classList.add('hidden');
+      const nome = document.getElementById('cad-nome').value;
+      const email = document.getElementById('cad-email').value;
+      const senha = document.getElementById('cad-senha').value;
       try {
-        const res = await fetch(`${API_BASE}/api/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome, email, senha }) });
+        const res = await fetch(`${API_BASE}/api/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nome, email, senha })
+        });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Erro ao registrar.');
-        fecharModais(); mostrarToast('Conta criada com sucesso! Faça login.'); mostrarLogin();
-      } catch (err) { erroEl.textContent = err.message; erroEl.classList.remove('hidden'); }
+        fecharModais();
+        mostrarToast('Conta criada com sucesso! Faça login.');
+        mostrarLogin();
+      } catch (err) {
+        erroEl.textContent = err.message;
+        erroEl.classList.remove('hidden');
+      }
     }
 
     function previsualizarFotoItem(event) {
-      const file = event.target.files[0]; if (!file) return;
+      const file = event.target.files[0];
+      if (!file) return;
       arquivoFotoItem = file;
       document.getElementById('nome-arquivo-foto').textContent = file.name;
       const reader = new FileReader();
-      reader.onload = ev => { document.getElementById('preview-foto-img').src = ev.target.result; document.getElementById('preview-foto-container').classList.remove('hidden'); };
+      reader.onload = ev => {
+        document.getElementById('preview-foto-img').src = ev.target.result;
+        document.getElementById('preview-foto-container').classList.remove('hidden');
+      };
       reader.readAsDataURL(file);
     }
 
     async function cadastrarItem(e) {
       e.preventDefault();
       const token = localStorage.getItem('token');
-      const erroEl = document.getElementById('item-erro'); erroEl.classList.add('hidden');
-      if (!token) { erroEl.textContent = 'Sessão expirada. Faça login novamente.'; erroEl.classList.remove('hidden'); return; }
+      const erroEl = document.getElementById('item-erro');
+      erroEl.classList.add('hidden');
+      if (!token) {
+        erroEl.textContent = 'Sessão expirada. Faça login novamente.';
+        erroEl.classList.remove('hidden');
+        return;
+      }
       const preco = parseFloat(document.getElementById('item-preco').value.replace(',', '.')) || 0;
       let imagem_url = null;
       try {
         const payload = {
           titulo: document.getElementById('item-titulo').value.trim(),
           descricao: document.getElementById('item-descricao').value.trim() || "Sem detalhes informados",
-          preco, modalidade: document.getElementById('item-modalidade').value,
+          preco,
+          modalidade: document.getElementById('item-modalidade').value,
           condicao: document.getElementById('item-condicao').value || "semi-novo",
-          imagem_url, status: "disponivel", categoria_id: 1
+          imagem_url,
+          status: "disponivel",
+          categoria_id: 1
         };
-        const res = await fetch(`${API_BASE}/api/itens`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(payload) });
+        const res = await fetch(`${API_BASE}/api/itens`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(payload)
+        });
         const data = await res.json();
         if (!res.ok) {
           let det = 'Erro ao cadastrar material.';
@@ -632,17 +712,32 @@
         let avisoFoto = null;
         if (arquivoFotoItem && data.id) {
           try {
-            const fd = new FormData(); fd.append('arquivo', await reduzirImagem(arquivoFotoItem), 'foto.jpg');
-            const up = await fetch(`${API_BASE}/api/itens/${data.id}/foto`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd });
-            if (!up.ok) { const e = await up.json().catch(() => ({})); avisoFoto = 'Anúncio criado, mas a foto falhou: ' + (e.detail || up.status); }
-          } catch (errFoto) { avisoFoto = 'Anúncio criado, mas a foto não foi enviada.'; }
+            const fd = new FormData();
+            fd.append('arquivo', await reduzirImagem(arquivoFotoItem), 'foto.jpg');
+            const up = await fetch(`${API_BASE}/api/itens/${data.id}/foto`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` },
+              body: fd
+            });
+            if (!up.ok) {
+              const errJson = await up.json().catch(() => ({}));
+              avisoFoto = 'Anúncio criado, mas a foto falhou: ' + (errJson.detail || up.status);
+            }
+          } catch (errFoto) {
+            avisoFoto = 'Anúncio criado, mas a foto não foi enviada.';
+          }
         }
         arquivoFotoItem = null;
         document.getElementById('nome-arquivo-foto').textContent = 'Nenhum arquivo selecionado';
         document.getElementById('preview-foto-container').classList.add('hidden');
-        fecharModais(); carregarItens(); mudarAba('vitrine');
+        fecharModais();
+        carregarItens();
+        mudarAba('vitrine');
         mostrarToast(avisoFoto || 'Material anunciado com sucesso!', avisoFoto ? 'aviso' : 'sucesso');
-      } catch (err) { erroEl.textContent = err.message; erroEl.classList.remove('hidden'); }
+      } catch (err) {
+        erroEl.textContent = err.message;
+        erroEl.classList.remove('hidden');
+      }
     }
 
     async function carregarItens() {
@@ -656,7 +751,9 @@
         document.getElementById('kpi-meus-itens').textContent = todosItens.filter(ehMeu).length;
         renderizarVitrine();
         if (localStorage.getItem('token')) renderizarGraficos();
-      } catch (err) { console.error('Erro ao buscar itens:', err); }
+      } catch (err) {
+        console.error('Erro ao buscar itens:', err);
+      }
     }
 
     function filtrarVitrine(tipo) {
@@ -714,22 +811,25 @@
       const a = document.getElementById('graficoAtividade');
       if (a) {
         if (chartAtividade) chartAtividade.destroy();
-        chartAtividade = new Chart(a, { type: 'bar',
+        chartAtividade = new Chart(a, {
+          type: 'bar',
           data: { labels: diaLabels, datasets: [{ label: 'Interações', data: [12, 19, 8, 15, 22, 14, todosItens.length + 5], backgroundColor: '#5b4bdb', borderRadius: 8 }] },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } } });
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+        });
       }
       const m = document.getElementById('graficoModalidades');
       if (m) {
         if (chartModalidades) chartModalidades.destroy();
         const c = { venda: 0, troca: 0, doacao: 0, emprestimo: 0 };
         todosItens.forEach(it => { const k = (it.modalidade || 'venda').toLowerCase(); c[k] !== undefined ? c[k]++ : c.venda++; });
-        chartModalidades = new Chart(m, { type: 'doughnut',
+        chartModalidades = new Chart(m, {
+          type: 'doughnut',
           data: { labels: ['Venda', 'Troca', 'Doação', 'Empréstimo'], datasets: [{ data: [c.venda || 4, c.troca || 2, c.doacao || 3, c.emprestimo || 1], backgroundColor: ['#5b4bdb', '#f59e0b', '#84cc16', '#ff6b57'], borderWidth: 0 }] },
-          options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } } });
+          options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }
+        });
       }
     }
 
-    // ===== Foto: reduz para no máximo 1280 px (evita o limite de 5 MB) =====
     function reduzirImagem(file, max = 1280) {
       return new Promise(resolve => {
         const img = new Image(), url = URL.createObjectURL(file);
@@ -744,7 +844,6 @@
       });
     }
 
-    // ===== Interesse, chat e pagamento =====
     let conversaAberta = null, ultimoMsgId = 0, naoLidasAntes = 0, conversasCache = [];
     const authH = () => ({ 'Authorization': `Bearer ${localStorage.getItem('token')}`, 'Content-Type': 'application/json' });
 
@@ -818,7 +917,6 @@
       } catch (e) { mostrarToast(e.message, 'aviso'); }
     }
 
-    // Notificação: consulta mensagens não lidas a cada 8 s
     async function verificarMensagens() {
       if (!localStorage.getItem('token')) return;
       try {
@@ -831,7 +929,7 @@
         if (nao_lidas > naoLidasAntes && !noChat) mostrarToast('Você recebeu uma nova mensagem.');
         naoLidasAntes = nao_lidas;
         if (noChat) { atualizarMensagens(); carregarConversas(); }
-      } catch (e) { /* sem rede: tenta no próximo ciclo */ }
+      } catch (e) { }
     }
 
     async function iniciarCheckoutStripe() {
@@ -846,9 +944,12 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-      calcularEconomia(); atualizarEstadoVisual(); carregarItens();
+      calcularEconomia();
+      atualizarEstadoVisual();
+      carregarItens();
       if (new URLSearchParams(location.search).get('pagamento') === 'ok') mostrarToast('Pagamento concluído na Stripe!');
-      verificarMensagens(); setInterval(verificarMensagens, 8000);
+      verificarMensagens();
+      setInterval(verificarMensagens, 8000);
     });
   </script>
 </body>
