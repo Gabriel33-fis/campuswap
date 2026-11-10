@@ -764,13 +764,40 @@
       renderizarVitrine();
     }
 
+    async function excluirItem(id) {
+      if (!confirm("Tem certeza que deseja apagar este anúncio permanentemente?")) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/itens/${id}`, {
+          method: 'DELETE',
+          headers: authH()
+        });
+        if (!res.ok) {
+          const erro = await res.json().catch(() => ({}));
+          throw new Error(erro.detail || "Falha ao excluir o anúncio.");
+        }
+        mostrarToast("Anúncio excluído com sucesso!", "sucesso");
+        if (typeof renderizarMeusAnuncios === 'function') renderizarMeusAnuncios();
+        if (typeof renderizarVitrine === 'function') renderizarVitrine();
+        if (typeof carregarProdutos === 'function') await carregarProdutos();
+      } catch (e) {
+        mostrarToast(e.message, "aviso");
+      }
+    }
+
     function cardItem(item) {
       const cores = { venda: 'bg-blue-100 text-blue-800', doacao: 'bg-green-100 text-green-800', troca: 'bg-yellow-100 text-yellow-800', emprestimo: 'bg-purple-100 text-purple-800' };
       const mod = (item.modalidade || 'venda').toLowerCase();
       const preco = Number(item.preco) > 0 ? `R$ ${Number(item.preco).toFixed(2).replace('.', ',')}` : 'Grátis';
       const meu = ehMeu(item);
       const acao = meu
-        ? `<span class="block text-center font-bold py-2 rounded-xl text-xs bg-indigo-50 text-indigo-700 border border-indigo-200"><i class="fa-solid fa-user-check mr-1"></i> Seu anúncio</span>`
+        ? `<div class="flex gap-2">
+             <span class="flex-1 text-center font-bold py-2 rounded-xl text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center justify-center">
+               <i class="fa-solid fa-user-check mr-1"></i> Seu
+             </span>
+             <button onclick="excluirItem(${item.id})" class="px-3 py-2 rounded-xl text-xs font-bold bg-red-50 text-red-600 border border-red-200 hover:bg-red-600 hover:text-white transition flex items-center justify-center gap-1" title="Excluir este anúncio">
+               <i class="fa-solid fa-trash-can"></i> Excluir
+             </button>
+           </div>`
         : `<button onclick="demonstrarInteresse(${item.id})" class="w-full font-bold py-2 rounded-xl text-xs border border-gray-200 hover:text-white transition" style="color:var(--violet-d)" onmouseover="this.style.background='var(--violet)'" onmouseout="this.style.background=''">Tenho interesse</button>`;
       const capa = item.imagem_url
         ? `<img src="${esc(item.imagem_url)}" alt="${esc(item.titulo)}" class="w-full h-full object-cover">`
