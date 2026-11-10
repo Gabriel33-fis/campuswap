@@ -35,7 +35,8 @@ services:
 
   log_service:
     build:
-      context: ./log_service
+      context: https://github.com/Gabriel33-fis/campuswap.git#main:log_service
+    image: campuswap-log:v17
     container_name: gabriel_log_service
     restart: always
     command: uvicorn main:app --host 0.0.0.0 --port 6000
@@ -56,7 +57,8 @@ services:
 
   auth_service:
     build:
-      context: ./auth_service
+      context: https://github.com/Gabriel33-fis/campuswap.git#main:auth_service
+    image: campuswap-auth:v17
     container_name: gabriel_auth_service
     restart: always
     command: uvicorn main:app --host 0.0.0.0 --port 5000
@@ -103,7 +105,8 @@ services:
 
   catalogo_service:
     build:
-      context: ./catalogo_service
+      context: https://github.com/Gabriel33-fis/campuswap.git#main:catalogo_service
+    image: campuswap-catalogo:v17
     container_name: gabriel_catalogo_service
     restart: always
     command: uvicorn main:app --host 0.0.0.0 --port 8000

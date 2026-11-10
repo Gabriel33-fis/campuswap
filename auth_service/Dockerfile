@@ -2,11 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libffi-dev \
-    && rm -rf /var/lib/apt/lists/*
-
+# Atualiza pip e ferramentas básicas de wheel
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 COPY requirements.txt .
