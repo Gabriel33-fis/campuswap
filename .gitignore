@@ -11,3 +11,4 @@ __pycache__/
 *.pyc
 __pycache__/
 logs_execucao_local.txt
+catalogo_service/uploads/

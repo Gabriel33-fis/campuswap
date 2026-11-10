@@ -1,3 +1,6 @@
+import pathlib
+FOTOS_DIR = pathlib.Path('/app/uploads')
+FOTOS_DIR.mkdir(parents=True, exist_ok=True)
 import os
 import io
 import json
@@ -266,40 +269,38 @@ async def criar_item(request: Request, db: Session = Depends(get_db)):
 @app.post("/api/itens/{item_id}/foto")
 async def upload_foto_item(item_id: int, arquivo: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
-        conteudo = await arquivo.read()
-        nome_arquivo = f"item_{item_id}_{uuid.uuid4().hex[:8]}.jpg"
-
-        if minio_client:
-            minio_client.put_object(
-                bucket_name=MINIO_BUCKET_NAME,
-                object_name=nome_arquivo,
-                data=io.BytesIO(conteudo),
-                length=len(conteudo),
-                content_type=arquivo.content_type or "image/jpeg"
-            )
-            url_foto = f"/api/fotos/{nome_arquivo}"
-        else:
-            url_foto = None
-
-        # Atualiza o produto com a foto
+        dados = await arquivo.read()
+        extensao = "jpg"
+        if arquivo.filename and "." in arquivo.filename:
+            extensao = arquivo.filename.rsplit(".", 1)[1].lower()
+            
+        nome_arquivo = f"item_{item_id}_{uuid.uuid4().hex[:8]}.{extensao}"
+        caminho_arquivo = FOTOS_DIR / nome_arquivo
+        
+        with open(caminho_arquivo, "wb") as f_out:
+            f_out.write(dados)
+            
+        url_foto = f"/api/fotos/{nome_arquivo}"
+        
         produto = db.query(models.Produto).filter(models.Produto.id == item_id).first()
-        if produto and hasattr(produto, "imagem_url") and url_foto:
+        if produto:
+            produto.foto_key = nome_arquivo
             produto.imagem_url = url_foto
             db.commit()
-            if r:
+            
+        if r:
+            try:
                 r.delete("catalogo_produtos")
-
+            except Exception:
+                pass
+                
         return {"message": "Foto enviada com sucesso", "foto_url": url_foto}
     except Exception as e:
-        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"detail": f"Erro no upload da foto: {str(e)}"})
-
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"detail": f"Erro no upload: {str(e)}"})
 
 @app.get("/api/fotos/{nome_foto}")
 def obter_foto(nome_foto: str):
-    try:
-        if not minio_client:
-            raise HTTPException(status_code=404, detail="MinIO offline")
-        obj = minio_client.get_object(MINIO_BUCKET_NAME, nome_foto)
-        return Response(content=obj.read(), media_type="image/jpeg")
-    except Exception:
+    caminho = FOTOS_DIR / nome_foto
+    if not caminho.exists():
         raise HTTPException(status_code=404, detail="Foto não encontrada")
+    return Response(content=caminho.read_bytes(), media_type="image/jpeg")

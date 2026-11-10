@@ -89,6 +89,9 @@ services:
       - STRIPE_PRICE_ID=price_1UaFYeCRWB7Qyui3kOVqlgV6
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-whsec_mock}
       - PUBLIC_BASE_URL=http://localhost:8207
+      - CHECKOUT_SUCCESS_URL=${CHECKOUT_SUCCESS_URL}
+      - CHECKOUT_CANCEL_URL=${CHECKOUT_CANCEL_URL}
+      - FRONTEND_URL=${FRONTEND_URL}
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/health')\" || exit 1"]
       interval: 10s
@@ -117,13 +120,16 @@ services:
       - JWT_SECRET=${JWT_SECRET:-chave_super_secreta_jwt_padrao_com_tamanho_seguro_32bytes}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - MINIO_ENDPOINT=minio:8000
+      - MINIO_ENDPOINT=gabriel_minio:8000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=miniopassword123
       - MINIO_BUCKET_NAME=campuswap-fotos
       - MINIO_SECURE=false
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - PUBLIC_BASE_URL=http://localhost:8207
+      - CHECKOUT_SUCCESS_URL=${CHECKOUT_SUCCESS_URL}
+      - CHECKOUT_CANCEL_URL=${CHECKOUT_CANCEL_URL}
+      - FRONTEND_URL=${FRONTEND_URL}
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
       interval: 10s
