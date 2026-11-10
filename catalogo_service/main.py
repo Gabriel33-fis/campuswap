@@ -305,7 +305,7 @@ def obter_foto(nome_foto: str):
         raise HTTPException(status_code=404, detail="Foto não encontrada")
     return Response(content=caminho.read_bytes(), media_type="image/jpeg")
 # =====================================================================
-# SISTEMA DE CONVERSAS E MENSAGENS (CHAT)
+# SISTEMA DE CONVERSAS E MENSAGENS (CHAT COM DIFERENCIACAO)
 # =====================================================================
 _CONVERSAS_DB = []
 _MENSAGENS_DB = {}
@@ -321,13 +321,14 @@ def manifestar_interesse_item(item_id: int, db: Session = Depends(get_db)):
     if not conversa_existente:
         cid = len(_CONVERSAS_DB) + 1
         msg_inicial = f"Olá! Tenho interesse no seu anúncio '{titulo_item}'. Ainda está disponível?"
+        resposta_vendedor = f"Olá! Está disponível sim, em perfeito estado. Tem interesse em retirar no campus?"
         
         nova_conversa = {
             "id": cid,
             "item_id": item_id,
             "titulo": f"Interesse: {titulo_item}",
-            "outro_nome": "Vendedor do Anúncio",
-            "ultima": msg_inicial,
+            "outro_nome": "Vendedor do Campus",
+            "ultima": resposta_vendedor,
             "meu_papel": "interessado",
             "pagamento": "direto",
             "nao_lidas": 0
@@ -339,6 +340,11 @@ def manifestar_interesse_item(item_id: int, db: Session = Depends(get_db)):
                 "id": 1,
                 "texto": msg_inicial,
                 "minha": True
+            },
+            {
+                "id": 2,
+                "texto": resposta_vendedor,
+                "minha": False
             }
         ]
         return {"status": "sucesso", "conversa_id": cid, "item_id": item_id}
@@ -368,7 +374,6 @@ def listar_mensagens_conversa(conversa_id: int, depois_de: int = 0):
             c["nao_lidas"] = 0
             
     todas_msgs = _MENSAGENS_DB.get(conversa_id, [])
-    # Filtra as mensagens pelo parametro depois_de
     msgs_filtradas = [m for m in todas_msgs if m["id"] > depois_de]
     return {"mensagens": msgs_filtradas}
 
@@ -381,15 +386,35 @@ async def enviar_mensagem(conversa_id: int, request: Request):
         raise HTTPException(status_code=400, detail="Texto da mensagem é obrigatório")
 
     msgs = _MENSAGENS_DB.setdefault(conversa_id, [])
-    nova_msg = {
+    
+    # 1. Mensagem enviada por voce (balao violeta a direita)
+    msg_usuario = {
         "id": len(msgs) + 1,
         "texto": texto,
         "minha": True
     }
-    msgs.append(nova_msg)
+    msgs.append(msg_usuario)
 
+    # 2. Resposta automatica do outro usuario (balao branco a esquerda)
+    respostas_mock = [
+        "Consigo fazer um desconto sim se fecharmos hoje!",
+        "Podemos combinar a entrega no intervalo das aulas.",
+        "Perfeito, podemos combinar então!",
+        "Fechado! Qualquer dúvida me avise por aqui."
+    ]
+    idx_resp = (len(msgs) // 2) % len(respostas_mock)
+    texto_resposta = respostas_mock[idx_resp]
+    
+    msg_outro = {
+        "id": len(msgs) + 1,
+        "texto": texto_resposta,
+        "minha": False
+    }
+    msgs.append(msg_outro)
+
+    # Atualiza a ultima mensagem da conversa
     for c in _CONVERSAS_DB:
         if c["id"] == conversa_id:
-            c["ultima"] = texto
+            c["ultima"] = texto_resposta
 
-    return {"status": "sucesso", "mensagem": nova_msg}
+    return {"status": "sucesso", "mensagem": msg_usuario}
