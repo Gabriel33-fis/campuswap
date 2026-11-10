@@ -83,8 +83,8 @@ services:
       - LOG_SERVICE_URL=http://log_service:6000
       - MAILTRAP_HOST=sandbox.smtp.mailtrap.io
       - MAILTRAP_PORT=2525
-      - MAILTRAP_USER=${MAILTRAP_USER:-test}
-      - MAILTRAP_PASS=${MAILTRAP_PASS:-test}
+      - MAILTRAP_USER=891b6bf689d033
+      - MAILTRAP_PASS=a6056f6ec19f20
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - STRIPE_PRICE_ID=price_1UaFYeCRWB7Qyui3kOVqlgV6
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-whsec_mock}
