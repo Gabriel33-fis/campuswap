@@ -1003,5 +1003,29 @@
     </div>
   </div>
 
+
+<script>
+  (function() {
+    function autoAbrirResetSenha() {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token_reset') || params.get('token');
+      if (token) {
+        const modal = document.getElementById('modal-redefinir-senha');
+        const tokenInp = document.getElementById('reset-token-val');
+        if (modal && tokenInp) {
+          tokenInp.value = token;
+          modal.classList.remove('hidden');
+        }
+      }
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', autoAbrirResetSenha);
+    } else {
+      autoAbrirResetSenha();
+    }
+    window.addEventListener('load', autoAbrirResetSenha);
+  })();
+</script>
+
 </body>
 </html>
