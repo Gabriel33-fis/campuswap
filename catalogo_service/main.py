@@ -5,7 +5,7 @@ from pathlib import Path
 import requests
 import redis
 from fastapi import FastAPI, HTTPException, Depends, Request, Response, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -60,13 +60,67 @@ app = FastAPI(title="CampusSwap - Catalogo Service")
 Instrumentator().instrument(app).expose(app)
 
 
+# Rota principal (Interface do CampusSwap)
 @app.get("/", response_class=HTMLResponse)
 def pagina_inicial():
     caminho_html = Path(__file__).parent / "index.html"
     if caminho_html.exists():
         return HTMLResponse(content=caminho_html.read_text(encoding="utf-8"))
-    return HTMLResponse(content="<h1>Erro: index.html nao encontrado dentro do catalogo_service</h1>", status_code=404)
+    return HTMLResponse(content="<h1>Erro: index.html não encontrado no catálogo</h1>", status_code=404)
 
+
+# =====================================================================
+# PROXY PARA O AUTH SERVICE (Permite login e registo a partir da raiz)
+# =====================================================================
+
+@app.post("/api/register")
+@app.post("/register")
+async def proxy_register(request: Request):
+    dados = await request.json()
+    try:
+        resp = requests.post(f"{AUTH_SERVICE_URL}/register", json=dados, timeout=5.0)
+        return JSONResponse(status_code=resp.status_code, content=resp.json())
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Serviço Auth indisponível: {exc}")
+
+
+@app.post("/api/login")
+@app.post("/login")
+async def proxy_login(request: Request):
+    dados = await request.json()
+    try:
+        resp = requests.post(f"{AUTH_SERVICE_URL}/login", json=dados, timeout=5.0)
+        return JSONResponse(status_code=resp.status_code, content=resp.json())
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Serviço Auth indisponível: {exc}")
+
+
+@app.post("/api/forgot-password")
+@app.post("/forgot-password")
+async def proxy_forgot_password(request: Request):
+    dados = await request.json()
+    try:
+        resp = requests.post(f"{AUTH_SERVICE_URL}/forgot-password", json=dados, timeout=5.0)
+        return JSONResponse(status_code=resp.status_code, content=resp.json())
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Serviço Auth indisponível: {exc}")
+
+
+@app.post("/api/checkout")
+@app.post("/checkout")
+async def proxy_checkout(request: Request):
+    auth_header = request.headers.get("authorization")
+    headers = {"Authorization": auth_header} if auth_header else {}
+    try:
+        resp = requests.post(f"{AUTH_SERVICE_URL}/checkout", headers=headers, timeout=5.0)
+        return JSONResponse(status_code=resp.status_code, content=resp.json())
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Serviço Auth indisponível: {exc}")
+
+
+# =====================================================================
+# ROTAS DO CATÁLOGO E OBSERVABILIDADE
+# =====================================================================
 
 @app.get("/health", tags=["Observabilidade"])
 def health_check(response: Response, db: Session = Depends(get_db)):
