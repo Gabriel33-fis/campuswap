@@ -6,3 +6,8 @@ __pycache__/
 .vscode/
 *.pyo
 .DS_Store
+
+.env
+*.pyc
+__pycache__/
+logs_execucao_local.txt
