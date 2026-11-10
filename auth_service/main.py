@@ -14,32 +14,32 @@ import schemas
 import auth
 import email_service
 
-LOG_SERVICE_URL = os.getenv("LOG_SERVICE_URL", "http://log_service:6000")[cite: 3]
+LOG_SERVICE_URL = os.getenv("LOG_SERVICE_URL", "http://log_service:6000")
 
 # Configurações Stripe (Modo de Teste)
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")[cite: 3]
-STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID_PRO") or os.getenv("STRIPE_PRICE_ID")[cite: 3]
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")[cite: 3]
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID_PRO") or os.getenv("STRIPE_PRICE_ID")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
 CHECKOUT_SUCCESS_URL = os.getenv(
     "CHECKOUT_SUCCESS_URL",
     "https://gabriel-graciano-isw055.lapps.studio/?session_id={CHECKOUT_SESSION_ID}"
-)[cite: 3]
+)
 CHECKOUT_CANCEL_URL = os.getenv(
     "CHECKOUT_CANCEL_URL",
     "https://gabriel-graciano-isw055.lapps.studio/?status=cancelado"
-)[cite: 3]
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://gabriel-graciano-isw055.lapps.studio")[cite: 3]
+)
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://gabriel-graciano-isw055.lapps.studio")
 
-VALOR_MENSAL_PRO_BRL = 19.90[cite: 3]
+VALOR_MENSAL_PRO_BRL = 19.90
 
 
 def extrair_ip(request: Request) -> str:
     """Extrai o IP real considerando proxies reversos ou cliente direto."""
-    forwarded = request.headers.get("x-forwarded-for")[cite: 3]
+    forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()[cite: 3]
-    return request.client.host if request.client else "desconhecido"[cite: 3]
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "desconhecido"
 
 
 def registrar_log(usuario_id, acao, ip=None, detalhes=None):
@@ -53,9 +53,9 @@ def registrar_log(usuario_id, acao, ip=None, detalhes=None):
                 "detalhes": detalhes
             },
             timeout=1.0
-        )[cite: 3]
+        )
     except Exception as e:
-        print(f"Aviso log_service: {e}")[cite: 3]
+        print(f"Aviso log_service: {e}")
 
 
 # Inicialização segura das tabelas
@@ -420,7 +420,7 @@ async def stripe_webhook(
                 usuario_id=usuario.id,
                 acao="assinatura_cancelada",
                 ip=extrair_ip(request),
-                detalhes=f"Assinatura cancelada. Usuário retornou ao plano Free."
+                detalhes="Assinatura cancelada. Usuário retornou ao plano Free."
             )
 
     elif event_type == "invoice.payment_failed":
