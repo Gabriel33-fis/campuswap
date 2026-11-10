@@ -5,6 +5,7 @@ import requests
 from fastapi import FastAPI, HTTPException, Depends, Request, Response, Header, status
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
+from sqlalchemy.exc import IntegrityError
 from prometheus_fastapi_instrumentator import Instrumentator
 
 import database
@@ -356,6 +357,17 @@ async def stripe_webhook(
 
     event_type = event["type"]
     data_object = event["data"]["object"]
+    event_id = event["id"]
+
+    # Idempotência: o Stripe reenvia eventos; cada event_id só tem efeito uma vez.
+    if db.query(models.EventoStripe).filter(models.EventoStripe.event_id == event_id).first():
+        return {"status": "duplicate", "event_id": event_id}
+    try:
+        db.add(models.EventoStripe(event_id=event_id, tipo=event_type))
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        return {"status": "duplicate", "event_id": event_id}
 
     if event_type == "checkout.session.completed":
         customer_id = data_object.get("customer")
@@ -438,11 +450,13 @@ async def stripe_webhook(
                 detalhes="Cobrança de renovação falhou. Conta marcada como inadimplente (past_due)."
             )
 
+    db.commit()  # confirma também o registro do evento (idempotência)
     return {"status": "success"}
 
 
 @app.get("/api/admin/metricas")
 def obter_metricas_admin(
+    request: Request,
     usuario_atual: models.Usuario = Depends(auth.obter_usuario_atual),
     db: Session = Depends(get_db)
 ):
@@ -470,8 +484,23 @@ def obter_metricas_admin(
 
     mrr_teste = assinaturas_ativas * VALOR_MENSAL_PRO_BRL
 
+    # Últimos eventos do log (serviço de logs, mesmo token do admin)
+    ultimos_eventos = []
+    try:
+        resp = requests.get(
+            f"{LOG_SERVICE_URL}/logs",
+            params={"limit": 10},
+            headers={"Authorization": request.headers.get("authorization", "")},
+            timeout=3,
+        )
+        if resp.ok:
+            ultimos_eventos = resp.json().get("logs", [])
+    except Exception as e:
+        print(f"Aviso log_service (métricas): {e}")
+
     return {
         "usuarios_por_plano": usuarios_por_plano,
         "assinaturas_ativas": assinaturas_ativas,
-        "mrr_teste_brl": round(mrr_teste, 2)
+        "mrr_teste_brl": round(mrr_teste, 2),
+        "ultimos_eventos": ultimos_eventos
     }
