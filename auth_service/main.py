@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import datetime, timedelta
 import stripe
@@ -356,7 +357,7 @@ async def stripe_webhook(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assinatura Stripe inválida")
 
     event_type = event["type"]
-    data_object = event["data"]["object"]
+    data_object = json.loads(payload)["data"]["object"]
     event_id = event["id"]
 
     # Idempotência: o Stripe reenvia eventos; cada event_id só tem efeito uma vez.

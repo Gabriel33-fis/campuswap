@@ -125,6 +125,35 @@ async def proxy_checkout(request: Request):
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Serviço Auth indisponível: {exc}")
 
 
+def _proxy_auth(method: str, path: str, request: Request):
+    auth_header = request.headers.get("authorization")
+    headers = {"Authorization": auth_header} if auth_header else {}
+    try:
+        resp = requests.request(method, f"{AUTH_SERVICE_URL}{path}", headers=headers, timeout=5.0)
+        try:
+            corpo = resp.json()
+        except Exception:
+            corpo = {"detail": resp.text}
+        return JSONResponse(status_code=resp.status_code, content=corpo)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Serviço Auth indisponível: {exc}")
+
+
+@app.get("/api/usuarios/me")
+async def proxy_usuario_me(request: Request):
+    return _proxy_auth("GET", "/api/usuarios/me", request)
+
+
+@app.post("/api/assinaturas/portal")
+async def proxy_portal(request: Request):
+    return _proxy_auth("POST", "/portal", request)
+
+
+@app.get("/api/admin/metricas")
+async def proxy_metricas_admin(request: Request):
+    return _proxy_auth("GET", "/api/admin/metricas", request)
+
+
 # =====================================================================
 # ROTAS DO CATÁLOGO DE MATERIAIS / PRODUTOS
 # =====================================================================
