@@ -59,7 +59,7 @@ services:
       context: ./auth_service
     container_name: gabriel_auth_service
     restart: always
-    command: sh -c "pip install --no-cache-dir stripe && uvicorn main:app --host 0.0.0.0 --port 5000"
+    command: uvicorn main:app --host 0.0.0.0 --port 5000
     ports:
       - "5000:5000"
     environment:
@@ -89,11 +89,13 @@ services:
     image: minio/minio:RELEASE.2024-01-31T20-20-33Z
     container_name: gabriel_minio
     restart: always
-    working_dir: /data
-    command: ["sh", "-c", "mkdir -p /data/campuswap-fotos && echo 'Bucket campuswap-fotos pronto' > /data/index.html && python3 -m http.server 9000"]
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=miniopassword123
     ports:
       - "9000:9000"
-      - "9001:9000"
+      - "9001:9001"
     volumes:
       - gabriel_minio_data:/data
     networks:
