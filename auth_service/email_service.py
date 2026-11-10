@@ -7,10 +7,10 @@ MAILTRAP_HOST = os.getenv("MAILTRAP_HOST", "sandbox.smtp.mailtrap.io")
 MAILTRAP_PORT = int(os.getenv("MAILTRAP_PORT", 2525))
 MAILTRAP_USER = os.getenv("MAILTRAP_USER")
 MAILTRAP_PASS = os.getenv("MAILTRAP_PASS")
-BASE_PUBLIC_URL = os.getenv("BASE_PUBLIC_URL", "https://gabriel-graciano-isw055.lapps.studio")
+BASE_PUBLIC_URL = os.getenv("BASE_PUBLIC_URL", "http://localhost:8207")
 
 def enviar_email_recuperacao(destinatario: str, token: str):
-    link_recuperacao = f"{BASE_PUBLIC_URL}/redefinir-senha?token={token}"
+    link_recuperacao = f"{BASE_PUBLIC_URL}/?token_reset={token}"
     
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "Recuperação de Senha - Catálogo Tom Hanks"
