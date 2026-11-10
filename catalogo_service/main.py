@@ -456,3 +456,40 @@ async def enviar_mensagem(conversa_id: int, request: Request):
 
     _salvar_chat(dados)
     return {"status": "sucesso", "mensagem": msg_usuario}
+# =====================================================================
+# EXCLUSÃO DE ANÚNCIOS (DELETE ITEM)
+# =====================================================================
+@app.delete("/api/itens/{item_id}")
+@app.delete("/api/produtos/{item_id}")
+def deletar_item(item_id: int, db: Session = Depends(get_db)):
+    produto = db.query(models.Produto).filter(models.Produto.id == item_id).first()
+    if not produto:
+        raise HTTPException(status_code=404, detail="Anúncio não encontrado")
+
+    # Remove o arquivo físico da foto caso exista localmente
+    imagem_url = getattr(produto, "imagem_url", "") or ""
+    if "/api/fotos/" in imagem_url:
+        nome_foto = imagem_url.split("/api/fotos/")[-1]
+        caminho_foto = FOTOS_DIR / nome_foto
+        if caminho_foto.exists():
+            try:
+                caminho_foto.unlink()
+            except Exception as e:
+                print(f"Aviso ao remover foto: {e}")
+
+    # Remove do banco de dados
+    try:
+        db.delete(produto)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erro ao excluir anúncio: {exc}")
+
+    # Invalida o cache no Redis
+    if r:
+        try:
+            r.delete("catalogo_produtos")
+        except Exception:
+            pass
+
+    return {"status": "sucesso", "message": f"Anúncio {item_id} removido com sucesso"}
