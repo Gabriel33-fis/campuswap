@@ -496,12 +496,15 @@ def deletar_item(item_id: int, db: Session = Depends(get_db)):
 @app.post("/api/reset-password")
 async def proxy_reset_password(request: Request):
     dados = await request.json()
+    print(f"[DEBUG PROXY] Recebido pedido de reset: {dados}")
     try:
         resp = requests.post(f"{AUTH_SERVICE_URL}/reset-password", json=dados, timeout=10.0)
+        print(f"[DEBUG PROXY] Resposta do auth_service: status={resp.status_code}, body={resp.text}")
         return Response(
             content=resp.content,
             status_code=resp.status_code,
             media_type="application/json"
         )
     except Exception as exc:
+        print(f"[DEBUG PROXY] Erro ao chamar auth_service: {exc}")
         raise HTTPException(status_code=500, detail=f"Erro de comunicacao com Auth: {exc}")

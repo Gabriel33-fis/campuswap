@@ -980,51 +980,149 @@
     });
   </script>
 
-  <!-- Modal Redefinir Senha via Token -->
-  <div id="modal-redefinir-senha" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
-      <h3 class="text-xl font-black text-gray-900 mb-1">Cadastrar Nova Senha</h3>
-      <p class="text-xs text-gray-500 mb-4">Insira a sua nova senha de acesso.</p>
-      
-      <form id="form-redefinir-senha" onsubmit="salvarNovaSenha(event)" class="space-y-4">
-        <input type="hidden" id="reset-token-val">
-        <div>
-          <label class="block text-xs font-bold text-gray-700 mb-1">Nova Senha</label>
-          <input type="password" id="nova-senha-inp" required minlength="6" placeholder="Mínimo 6 caracteres" class="w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-        </div>
-        <div>
-          <label class="block text-xs font-bold text-gray-700 mb-1">Confirmar Nova Senha</label>
-          <input type="password" id="confirma-nova-senha-inp" required minlength="6" placeholder="Repita a nova senha" class="w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-        </div>
-        <button type="submit" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm transition shadow-lg shadow-indigo-600/30">
-          Atualizar Senha
-        </button>
-      </form>
-    </div>
-  </div>
-
+  
 
 <script>
-  (function() {
-    function autoAbrirResetSenha() {
-      const params = new URLSearchParams(window.location.search);
-      const token = params.get('token_reset') || params.get('token');
-      if (token) {
-        const modal = document.getElementById('modal-redefinir-senha');
-        const tokenInp = document.getElementById('reset-token-val');
-        if (modal && tokenInp) {
-          tokenInp.value = token;
-          modal.classList.remove('hidden');
-        }
+async function realizarRedefinicaoSenha(e) {
+  if (e) e.preventDefault();
+  
+  const token = document.getElementById('reset-token-val').value;
+  const s1 = document.getElementById('nova-senha-inp').value;
+  const s2 = document.getElementById('confirma-nova-senha-inp').value;
+
+  console.log("Submetendo reset de senha...", { token: token ? "OK" : "AUSENTE", senhaLen: s1.length });
+
+  if (!token) {
+    alert("ERRO: Token ausente da URL! Solicite outro link no e-mail.");
+    return false;
+  }
+  if (s1.length < 6) {
+    alert("A senha precisa ter pelo menos 6 caracteres.");
+    return false;
+  }
+  if (s1 !== s2) {
+    alert("As senhas não coincidem!");
+    return false;
+  }
+
+  try {
+    const res = await fetch('/api/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: token, nova_senha: s1 })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    console.log("Resposta recebida:", res.status, data);
+
+    if (!res.ok) {
+      alert("Falha na redefinição (" + res.status + "): " + (data.detail || JSON.stringify(data)));
+      return false;
+    }
+
+    alert("SUCESSO: Senha alterada! Faça login com a nova senha.");
+    document.getElementById('modal-redefinir-senha').classList.add('hidden');
+    window.history.replaceState({}, document.title, window.location.pathname);
+    
+    // Abre login
+    const modalLogin = document.getElementById('modal-login');
+    if (modalLogin) modalLogin.classList.remove('hidden');
+  } catch (err) {
+    console.error(err);
+    alert("Erro de conexão com o servidor: " + err.message);
+  }
+  return false;
+}
+</script>
+
+
+
+
+<!-- MODAL DE REDEFINICAO DE SENHA -->
+<div id="modal-redefinir-senha" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+  <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
+    <h3 class="text-xl font-black text-gray-900 mb-1">Cadastrar Nova Senha</h3>
+    <p class="text-xs text-gray-500 mb-4">Insira a sua nova credencial de acesso.</p>
+    
+    <form id="form-redefinir-senha" onsubmit="enviarNovaSenha(event)" class="space-y-4">
+      <input type="hidden" id="reset-token-val">
+      <div>
+        <label class="block text-xs font-bold text-gray-700 mb-1">Nova Senha</label>
+        <input type="password" id="nova-senha-inp" required minlength="6" placeholder="Mínimo 6 caracteres" class="w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+      <div>
+        <label class="block text-xs font-bold text-gray-700 mb-1">Confirmar Nova Senha</label>
+        <input type="password" id="confirma-nova-senha-inp" required minlength="6" placeholder="Repita a nova senha" class="w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+      <button type="submit" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm transition shadow-lg shadow-indigo-600/30">
+        Atualizar Senha
+      </button>
+    </form>
+  </div>
+</div>
+
+<script>
+  function checarTokenNaUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token_reset') || params.get('token');
+    if (token) {
+      const modal = document.getElementById('modal-redefinir-senha');
+      const tokenInput = document.getElementById('reset-token-val');
+      if (modal && tokenInput) {
+        tokenInput.value = token;
+        modal.classList.remove('hidden');
       }
     }
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', autoAbrirResetSenha);
-    } else {
-      autoAbrirResetSenha();
+  }
+
+  async function enviarNovaSenha(e) {
+    e.preventDefault();
+    const token = document.getElementById('reset-token-val').value;
+    const s1 = document.getElementById('nova-senha-inp').value;
+    const s2 = document.getElementById('confirma-nova-senha-inp').value;
+
+    if (!token) {
+      alert("Token ausente. Solicite um novo link de recuperação.");
+      return;
     }
-    window.addEventListener('load', autoAbrirResetSenha);
-  })();
+    if (s1.length < 6) {
+      alert("A senha deve ter no mínimo 6 caracteres.");
+      return;
+    }
+    if (s1 !== s2) {
+      alert("As senhas não coincidem!");
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token, nova_senha: s1 })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert("Erro ao redefinir (" + res.status + "): " + (data.detail || "Falha na requisição"));
+        return;
+      }
+
+      alert("Senha alterada com sucesso! Faça login com a nova senha.");
+      document.getElementById('modal-redefinir-senha').classList.add('hidden');
+      window.history.replaceState({}, document.title, window.location.pathname);
+      
+      const modalLogin = document.getElementById('modal-login');
+      if (modalLogin) {
+        modalLogin.classList.remove('hidden');
+      } else {
+        window.location.reload();
+      }
+    } catch (err) {
+      alert("Erro de conexão: " + err.message);
+    }
+  }
+
+  window.addEventListener('DOMContentLoaded', checarTokenNaUrl);
+  setTimeout(checarTokenNaUrl, 300);
 </script>
 
 </body>
