@@ -497,8 +497,11 @@ def deletar_item(item_id: int, db: Session = Depends(get_db)):
 async def proxy_reset_password(request: Request):
     dados = await request.json()
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(f"{AUTH_SERVICE_URL}/reset-password", json=dados)
-            return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+        resp = requests.post(f"{AUTH_SERVICE_URL}/reset-password", json=dados, timeout=10.0)
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            media_type="application/json"
+        )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Erro no serviço de autenticação: {exc}")
+        raise HTTPException(status_code=500, detail=f"Erro de comunicacao com Auth: {exc}")
