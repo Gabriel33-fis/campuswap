@@ -1,10 +1,11 @@
 import os
 import io
 import json
+import uuid
 from pathlib import Path
 import requests
 import redis
-from fastapi import FastAPI, HTTPException, Depends, Request, Response, status
+from fastapi import FastAPI, HTTPException, Depends, Request, Response, UploadFile, File, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -46,7 +47,7 @@ except Exception as e:
     minio_client = None
     print(f"Aviso MinIO: {e}")
 
-# Criação de tabelas defensiva
+# Criação defensiva de tabelas
 try:
     engine_obj = getattr(database, "engine", getattr(database, "motor", None))
     base_obj = getattr(database, "Base", getattr(models, "Base", None))
@@ -60,7 +61,7 @@ app = FastAPI(title="CampusSwap - Catalogo Service")
 Instrumentator().instrument(app).expose(app)
 
 
-# Rota principal (Serve o frontend)
+# Rota principal (Serve a página do frontend)
 @app.get("/", response_class=HTMLResponse)
 def pagina_inicial():
     caminho_html = Path(__file__).parent / "index.html"
@@ -70,7 +71,7 @@ def pagina_inicial():
 
 
 # =====================================================================
-# PROXY PARA O AUTH SERVICE (Comunicação inter-serviços)
+# PROXY PARA O AUTH SERVICE
 # =====================================================================
 
 @app.post("/api/register")
@@ -119,7 +120,7 @@ async def proxy_checkout(request: Request):
 
 
 # =====================================================================
-# ROTAS DO CATÁLOGO E OBSERVABILIDADE
+# ROTAS DO CATÁLOGO DE MATERIAIS / PRODUTOS
 # =====================================================================
 
 @app.get("/health", tags=["Observabilidade"])
@@ -177,6 +178,7 @@ def listar_produtos(db: Session = Depends(get_db)):
                 "descricao": getattr(p, "descricao", ""),
                 "preco": getattr(p, "preco", 0.0),
                 "modalidade": getattr(p, "modalidade", "venda"),
+                "condicao": getattr(p, "condicao", "semi-novo"),
                 "imagem_url": getattr(p, "imagem_url", None),
                 "usuario_id": getattr(p, "usuario_id", None)
             })
@@ -192,23 +194,112 @@ def listar_produtos(db: Session = Depends(get_db)):
 
 @app.post("/api/itens")
 async def criar_item(request: Request, db: Session = Depends(get_db)):
-    dados = await request.json()
-    novo = models.Produto(
-        titulo=dados.get("titulo", "Material"),
-        descricao=dados.get("descricao", ""),
-        preco=dados.get("preco", 0.0),
-        modalidade=dados.get("modalidade", "venda"),
-        imagem_url=dados.get("imagem_url"),
-        usuario_id=dados.get("usuario_id", 1)
-    )
-    db.add(novo)
-    db.commit()
-    db.refresh(novo)
+    try:
+        dados = await request.json()
+        
+        # Mapeia dinamicamente apenas as colunas que existem no modelo Produto
+        atributos_produto = {c.name for c in models.Produto.__table__.columns} if hasattr(models.Produto, "__table__") else set()
+        
+        campos = {}
+        # Título / Nome
+        if "titulo" in atributos_produto:
+            campos["titulo"] = dados.get("titulo", "Material")
+        elif "nome" in atributos_produto:
+            campos["nome"] = dados.get("titulo", "Material")
+            
+        # Descrição
+        if "descricao" in atributos_produto:
+            campos["descricao"] = dados.get("descricao", "")
+            
+        # Preço
+        if "preco" in atributos_produto:
+            campos["preco"] = float(dados.get("preco", 0.0))
+            
+        # Modalidade
+        if "modalidade" in atributos_produto:
+            campos["modalidade"] = dados.get("modalidade", "venda")
+            
+        # Condição
+        if "condicao" in atributos_produto:
+            campos["condicao"] = dados.get("condicao", "semi-novo")
+            
+        # Imagem URL
+        if "imagem_url" in atributos_produto:
+            campos["imagem_url"] = dados.get("imagem_url")
+            
+        # Usuário / Dono
+        if "usuario_id" in atributos_produto:
+            campos["usuario_id"] = dados.get("usuario_id", 1)
+            
+        # Categoria padrão se a coluna existir
+        if "categoria_id" in atributos_produto:
+            campos["categoria_id"] = dados.get("categoria_id", 1)
 
-    if r:
-        try:
-            r.delete("catalogo_produtos")
-        except Exception:
-            pass
+        # Se não tiver __table__, instancia direto com kwargs seguros
+        if not campos:
+            novo = models.Produto(
+                titulo=dados.get("titulo", "Material"),
+                descricao=dados.get("descricao", ""),
+                preco=float(dados.get("preco", 0.0)),
+                modalidade=dados.get("modalidade", "venda"),
+                usuario_id=dados.get("usuario_id", 1)
+            )
+        else:
+            novo = models.Produto(**campos)
 
-    return {"message": "Item criado", "id": novo.id}
+        db.add(novo)
+        db.commit()
+        db.refresh(novo)
+
+        if r:
+            try:
+                r.delete("catalogo_produtos")
+            except Exception:
+                pass
+
+        return {"message": "Item criado com sucesso", "id": novo.id}
+    except Exception as exc:
+        db.rollback()
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"detail": f"Erro ao criar anúncio: {str(exc)}"})
+
+
+@app.post("/api/itens/{item_id}/foto")
+async def upload_foto_item(item_id: int, arquivo: UploadFile = File(...), db: Session = Depends(get_db)):
+    try:
+        conteudo = await arquivo.read()
+        nome_arquivo = f"item_{item_id}_{uuid.uuid4().hex[:8]}.jpg"
+
+        if minio_client:
+            minio_client.put_object(
+                bucket_name=MINIO_BUCKET_NAME,
+                object_name=nome_arquivo,
+                data=io.BytesIO(conteudo),
+                length=len(conteudo),
+                content_type=arquivo.content_type or "image/jpeg"
+            )
+            url_foto = f"/api/fotos/{nome_arquivo}"
+        else:
+            url_foto = None
+
+        # Atualiza o produto com a foto
+        produto = db.query(models.Produto).filter(models.Produto.id == item_id).first()
+        if produto and hasattr(produto, "imagem_url") and url_foto:
+            produto.imagem_url = url_foto
+            db.commit()
+            if r:
+                r.delete("catalogo_produtos")
+
+        return {"message": "Foto enviada com sucesso", "foto_url": url_foto}
+    except Exception as e:
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"detail": f"Erro no upload da foto: {str(e)}"})
+
+
+@app.get("/api/fotos/{nome_foto}")
+def obter_foto(nome_foto: str):
+    try:
+        if not minio_client:
+            raise HTTPException(status_code=404, detail="MinIO offline")
+        obj = minio_client.get_object(MINIO_BUCKET_NAME, nome_foto)
+        return Response(content=obj.read(), media_type="image/jpeg")
+    except Exception:
+        raise HTTPException(status_code=404, detail="Foto não encontrada")
