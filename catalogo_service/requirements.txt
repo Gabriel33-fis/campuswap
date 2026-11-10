@@ -5,7 +5,7 @@ pymysql
 cryptography
 python-multipart
 minio
-redis>=5.0.0
-requests>=2.31.0
-prometheus-fastapi-instrumentator>=6.0.0
+redis
+requests
+prometheus-fastapi-instrumentator
 python-dotenv

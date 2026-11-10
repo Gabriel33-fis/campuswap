@@ -4,11 +4,11 @@ sqlalchemy
 pymysql
 cryptography
 PyJWT>=2.8.0
-passlib[bcrypt]
-bcrypt==4.0.1
+passlib
+bcrypt
 email-validator
 python-dotenv
-requests>=2.31.0
-redis>=5.0.0
-prometheus-fastapi-instrumentator>=6.0.0
-stripe>=8.0.0
+requests
+redis
+prometheus-fastapi-instrumentator
+stripe
