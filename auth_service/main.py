@@ -111,7 +111,9 @@ def register(usuario_in: schemas.UsuarioCriar, request: Request, db: Session = D
         nome=usuario_in.nome,
         email=usuario_in.email,
         senha_hash=senha_hash,
-        papel=usuario_in.papel or "aluno",
+        # O papel nunca vem do cliente: todo cadastro publico nasce como "aluno".
+        # Promocao a moderador/admin so por quem administra o banco.
+        papel="aluno",
         plano="free",
         status_assinatura="active"
     )
