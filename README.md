@@ -222,3 +222,58 @@ As evidências fotográficas da stack em execução e dos testes de segurança e
 5. **`05-eventos-log.png`**: Logs do serviço `gabriel_log_service` processando eventos e respondendo a healthchecks.
 6. **`06-minio.png`**: Conexão com a API do MinIO confirmando o bucket `campuswap-fotos` e controle de permissões S3.
 7. **`07-portainer.png`**: Painel do Portainer demonstrando todos os contêineres da stack ativos e saudáveis (`healthy`/`running`).
+
+---
+
+## Atividade 11 — SaaS completo com Stripe
+
+Entrega da **Atividade 11** (ISW055 — Introdução à Computação em Nuvem), sob orientação do professor @siriani.
+
+O Plano Premium, que antes era uma cobrança única, virou uma **assinatura recorrente mensal** no Stripe, sempre em **modo de teste** (nenhuma cobrança real).
+
+### Planos e limites
+
+| Plano | Preço | Limite de anúncios |
+|---|---|---|
+| Free | R$ 0,00 | 3 anúncios por mês |
+| Pro | R$ 9,90/mês | Sem limite |
+
+O limite é aplicado **no backend** (`POST /api/itens`). Ao estourar, a API responde `402` com a mensagem: *"Limite do plano Free atingido: 3 anúncios por mês (3/3 usados). Assine o plano Pro para anunciar sem limite."* O valor do limite é configurável por `LIMITE_FREE_ANUNCIOS`.
+
+### Como funciona
+
+- **Checkout de assinatura:** `POST /api/checkout` cria uma Checkout Session com `mode=subscription`, ligada a um customer do Stripe guardado no usuário (`stripe_customer_id`). Dados de cartão nunca passam pelo servidor.
+- **Webhook:** `POST /api/assinaturas/webhook` valida a assinatura de cada evento (`Stripe-Signature`) e trata `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted` e `invoice.payment_failed`. O plano só muda quando o webhook chega e é validado, e não quando o navegador volta do checkout.
+- **Idempotência:** cada `event.id` é gravado na tabela `eventos_stripe`; um evento repetido responde `duplicate` e não produz efeito duplicado.
+- **Portal do cliente:** o botão "Gerenciar assinatura" abre o Billing Portal do Stripe, com cancelamento imediato habilitado para teste.
+- **Painel admin:** acessível apenas ao papel `admin`. Mostra usuários por plano, assinaturas ativas, MRR de teste (soma do valor mensal das assinaturas ativas) e os últimos eventos do log (`GET /api/admin/metricas`).
+
+### Variáveis de ambiente
+
+A chave secreta e o segredo do webhook ficam **somente em variáveis de ambiente**, nunca no código. Veja o `.env.example` (apenas nomes, sem valores): `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, `FRONTEND_URL`, `CHECKOUT_SUCCESS_URL`, `CHECKOUT_CANCEL_URL`, `LIMITE_FREE_ANUNCIOS`.
+
+### Como executar e testar (ambiente local)
+
+A execução desta entrega foi feita **localmente com Docker Compose**; o deploy no Portainer não foi concluído.
+
+```bash
+cp .env.example .env        # preencha com as chaves de TESTE do Stripe
+docker compose up -d --build
+stripe listen --events checkout.session.completed,customer.subscription.updated,customer.subscription.deleted,invoice.payment_failed \
+  --forward-to localhost:5000/api/assinaturas/webhook
+```
+
+Roteiro de teste: criar conta (nasce no Free), usar até estourar o limite, assinar o Pro com o cartão `4242 4242 4242 4242` (qualquer data futura e qualquer CVC), confirmar que o plano virou Pro após o webhook, cancelar pelo portal e entrar como admin para conferir o painel.
+
+### Evidências
+
+| Evidência | Print |
+|---|---|
+| Limite bloqueando no plano Free | ![limite](docs/prints/a11_limite_free.png) |
+| Assinatura com o cartão 4242 | ![checkout](docs/prints/a11_checkout_4242.png) |
+| Plano Pro ativo no sistema | ![plano pro](docs/prints/a11_plano_pro.png) |
+| Assinatura no dashboard do Stripe (modo de teste) | ![stripe](docs/prints/a11_stripe_assinatura.png) |
+| Evento `checkout.session.completed` no Stripe | ![evento](docs/prints/a11_webhook_evento_stripe.png) |
+| Evento processado e registrado no banco | ![banco](docs/prints/a11_webhook_eventos_stripe_db.png) |
+| Portal do cliente (Billing Portal) | ![portal](docs/prints/a11_portal_stripe.png) |
+| Painel admin | ![admin](docs/prints/a11_painel_admin.png) |
