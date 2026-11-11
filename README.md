@@ -4,6 +4,8 @@ Documento integrante da **Atividade 8** da disciplina de Introdução à Computa
 
 [← Voltar ao README](./README.md)
 
+> **Relatório P2 (individual):** [docs/P2_ISW055_Gabriel_Graciano.pdf](./docs/P2_ISW055_Gabriel_Graciano.pdf) — arquitetura e atividades 7 a 11, disciplina ISW055, professor [siriani](https://github.com/siriani).
+
 ---
 
 ## 1. Especificação Funcional (O Que o Sistema Faz)
