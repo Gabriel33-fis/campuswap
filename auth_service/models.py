@@ -31,3 +31,13 @@ class RecuperacaoSenha(Base):
     expira_em = Column(DateTime, nullable=False)
     usado = Column(Boolean, default=False)
     criado_em = Column(DateTime, default=datetime.utcnow)
+
+
+class EventoStripe(Base):
+    """Registro de eventos de webhook já processados (idempotência)."""
+    __tablename__ = "eventos_stripe"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(String(255), unique=True, index=True, nullable=False)
+    tipo = Column(String(100), nullable=False)
+    processado_em = Column(DateTime, default=datetime.utcnow)

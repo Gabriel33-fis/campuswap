@@ -9,3 +9,4 @@ redis
 requests
 prometheus-fastapi-instrumentator
 python-dotenv
+PyJWT>=2.8.0

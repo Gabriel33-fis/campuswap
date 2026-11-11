@@ -11,7 +11,7 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 ENDPOINT_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 PRICE_ID_PRO = os.getenv("STRIPE_PRICE_ID_PRO") or os.getenv("STRIPE_PRICE_ID")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://gabriel-graciano-isw055.lapps.studio")
-VALOR_MENSAL_PRO_BRL = 19.90
+VALOR_MENSAL_PRO_BRL = 9.90
 
 router = APIRouter(prefix="/api/assinaturas", tags=["Assinaturas"])
 

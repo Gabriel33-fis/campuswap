@@ -187,6 +187,7 @@
           <button id="btn-menu-meus-anuncios" onclick="mudarAba('meus-anuncios')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 text-gray-700"><i class="fa-solid fa-tags w-4"></i> Meus anúncios</button>
           <button id="btn-menu-mensagens" onclick="mudarAba('mensagens')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 text-gray-700"><i class="fa-solid fa-comments w-4"></i> Mensagens <span id="badge-msgs" class="hidden ml-auto bg-red-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">0</span></button>
           <button id="btn-menu-perfil" onclick="mudarAba('perfil')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 text-gray-700"><i class="fa-solid fa-user-gear w-4"></i> Meu perfil</button>
+          <button id="btn-menu-admin" onclick="mudarAba('admin')" class="hidden w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 text-gray-700"><i class="fa-solid fa-gauge-high w-4"></i> Painel admin</button>
           <button onclick="abrirModalNovoItem()" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 text-green-700"><i class="fa-solid fa-circle-plus w-4"></i> Anunciar material</button>
         </div>
 
@@ -195,6 +196,7 @@
           <h5 id="badge-plano" class="text-lg font-extrabold mt-1">Plano Free</h5>
           <p id="badge-plano-desc" class="text-xs text-indigo-200 mt-2 mb-4 leading-relaxed">Publique seus materiais e acerte entregas com colegas do campus.</p>
           <button id="btn-upgrade-stripe" onclick="iniciarCheckoutStripe()" class="btn-main w-full text-xs !py-2.5 !shadow-none"><i class="fa-solid fa-bolt mr-1"></i> Fazer upgrade para Premium</button>
+          <button id="btn-portal-stripe" onclick="abrirPortalStripe()" class="hidden btn-main w-full text-xs !py-2.5 !shadow-none"><i class="fa-solid fa-credit-card mr-1"></i> Gerenciar assinatura</button>
         </div>
       </aside>
 
@@ -265,6 +267,24 @@
                 <button onclick="enviarMensagem()" class="text-white px-4 rounded-xl text-sm font-bold" style="background:var(--violet)">Enviar</button>
               </div>
             </div>
+          </div>
+        </div>
+
+        <div id="aba-admin" class="hidden space-y-6">
+          <div class="bg-white p-6 border border-gray-200 shadow-sm">
+            <h2 class="text-2xl font-extrabold mb-1">Painel admin</h2>
+            <p class="text-sm text-gray-500 mb-6">Usuários por plano, assinaturas ativas, MRR de teste e últimos eventos.</p>
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+              <div class="p-4 border border-gray-200"><span class="text-xs text-gray-500 font-bold">Usuários Free</span><p id="adm-free" class="text-3xl font-extrabold mt-1">0</p></div>
+              <div class="p-4 border border-gray-200"><span class="text-xs text-gray-500 font-bold">Usuários Pro</span><p id="adm-pro" class="text-3xl font-extrabold mt-1">0</p></div>
+              <div class="p-4 border border-gray-200"><span class="text-xs text-gray-500 font-bold">Assinaturas ativas</span><p id="adm-ativas" class="text-3xl font-extrabold mt-1">0</p></div>
+              <div class="p-4 border border-gray-200"><span class="text-xs text-gray-500 font-bold">MRR de teste</span><p id="adm-mrr" class="text-3xl font-extrabold mt-1 text-green-700">R$ 0,00</p></div>
+            </div>
+            <h3 class="font-extrabold mb-2">Últimos eventos do log</h3>
+            <div class="overflow-x-auto"><table class="w-full text-xs text-left">
+              <thead><tr class="text-gray-500 border-b"><th class="py-2 pr-3">Data</th><th class="pr-3">Usuário</th><th class="pr-3">Ação</th><th>Detalhes</th></tr></thead>
+              <tbody id="adm-eventos"><tr><td colspan="4" class="py-3 text-gray-400">Carregando…</td></tr></tbody>
+            </table></div>
           </div>
         </div>
 
@@ -487,7 +507,7 @@
     }
 
     function mudarAba(aba) {
-      const mapa = { overview: 'aba-overview', vitrine: 'aba-vitrine', 'meus-anuncios': 'aba-meus-anuncios', mensagens: 'aba-mensagens', perfil: 'aba-perfil' };
+      const mapa = { overview: 'aba-overview', vitrine: 'aba-vitrine', 'meus-anuncios': 'aba-meus-anuncios', mensagens: 'aba-mensagens', perfil: 'aba-perfil', admin: 'aba-admin' };
       Object.keys(mapa).forEach(k => {
         document.getElementById(mapa[k]).classList.toggle('hidden', k !== aba);
         document.getElementById('btn-menu-' + k).className = k === aba ? ativo : inativo;
@@ -496,6 +516,7 @@
       if (aba === 'vitrine') renderizarVitrine();
       if (aba === 'meus-anuncios') renderizarMeusAnuncios();
       if (aba === 'mensagens') carregarConversas();
+      if (aba === 'admin') carregarPainelAdmin();
     }
 
     async function uploadFotoMinio(event) {
@@ -563,6 +584,10 @@
         if (btnUpgrade) {
           btnUpgrade.classList.toggle('hidden', isPro);
         }
+        const btnPortal = document.getElementById('btn-portal-stripe');
+        if (btnPortal) btnPortal.classList.toggle('hidden', !isPro);
+        const btnAdmin = document.getElementById('btn-menu-admin');
+        if (btnAdmin) btnAdmin.classList.toggle('hidden', user.papel !== 'admin');
 
         const kpiStatus = document.getElementById('kpi-status-conta');
         if (kpiStatus) {
@@ -959,6 +984,63 @@
       } catch (e) { }
     }
 
+    // Sincroniza plano/papel com o servidor (o plano só muda quando o webhook do Stripe chega)
+    async function sincronizarPlano() {
+      const token = localStorage.getItem('token');
+      if (!token) return null;
+      try {
+        const res = await fetch(`${API_BASE}/api/usuarios/me`, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!res.ok) return null;
+        const me = await res.json();
+        const atual = JSON.parse(localStorage.getItem('usuario') || '{}');
+        localStorage.setItem('usuario', JSON.stringify({
+          ...atual, papel: me.papel, plano: me.plano,
+          status_assinatura: me.status_assinatura, is_premium: !!me.is_premium
+        }));
+        atualizarEstadoVisual();
+        return me;
+      } catch (e) { return null; }
+    }
+
+    async function aguardarPlanoPro() {
+      mostrarToast('Confirmando sua assinatura…', 'aviso');
+      for (let i = 0; i < 8; i++) {
+        const me = await sincronizarPlano();
+        if (me && me.plano === 'pro') { mostrarToast('Assinatura Pro ativa! Limite removido.'); return; }
+        await new Promise(r => setTimeout(r, 2000));
+      }
+      mostrarToast('Pagamento recebido. O plano será atualizado assim que o Stripe confirmar.', 'aviso');
+    }
+
+    async function abrirPortalStripe() {
+      const token = localStorage.getItem('token');
+      if (!token) return mostrarLogin();
+      try {
+        const res = await fetch(`${API_BASE}/api/assinaturas/portal`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        if (data.url) window.location.href = data.url; else mostrarToast(data.detail || 'Não foi possível abrir o portal.', 'aviso');
+      } catch (e) { mostrarToast('Erro ao abrir o portal.', 'aviso'); }
+    }
+
+    async function carregarPainelAdmin() {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/admin/metricas`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const d = await res.json();
+        if (!res.ok) { mostrarToast(d.detail || 'Acesso restrito a administradores.', 'aviso'); return; }
+        const up = d.usuarios_por_plano || {};
+        document.getElementById('adm-free').textContent = up.free || 0;
+        document.getElementById('adm-pro').textContent = up.pro || 0;
+        document.getElementById('adm-ativas').textContent = d.assinaturas_ativas || 0;
+        document.getElementById('adm-mrr').textContent = 'R$ ' + Number(d.mrr_teste_brl || 0).toFixed(2).replace('.', ',');
+        const ev = d.ultimos_eventos || [];
+        document.getElementById('adm-eventos').innerHTML = ev.length
+          ? ev.map(e => `<tr class="border-b"><td class="py-2 pr-3 whitespace-nowrap">${esc((e.timestamp || '').replace('T', ' ').slice(0, 19))}</td><td class="pr-3">${esc(e.usuario_id)}</td><td class="pr-3 font-bold">${esc(e.acao)}</td><td>${esc(e.detalhes)}</td></tr>`).join('')
+          : '<tr><td colspan="4" class="py-3 text-gray-400">Sem eventos.</td></tr>';
+      } catch (e) { mostrarToast('Erro ao carregar o painel admin.', 'aviso'); }
+    }
+
     async function iniciarCheckoutStripe() {
       const token = localStorage.getItem('token');
       if (!token) return mostrarLogin();
@@ -974,6 +1056,9 @@
       calcularEconomia();
       atualizarEstadoVisual();
       carregarItens();
+      if (localStorage.getItem('token')) {
+        if (new URLSearchParams(location.search).get('session_id')) aguardarPlanoPro(); else sincronizarPlano();
+      }
       if (new URLSearchParams(location.search).get('pagamento') === 'ok') mostrarToast('Pagamento concluído na Stripe!');
       verificarMensagens();
       setInterval(verificarMensagens, 8000);

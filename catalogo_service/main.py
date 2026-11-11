@@ -17,6 +17,8 @@ from minio import Minio
 
 import database
 from database import get_db
+from auth_guard import obter_usuario_atual
+from datetime import datetime
 import models
 import schemas
 
@@ -28,6 +30,7 @@ MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "minio:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "miniopassword123")
 MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME", "campuswap-fotos")
+LIMITE_FREE = int(os.getenv("LIMITE_FREE_ANUNCIOS", 3))
 
 # Conexão Redis
 try:
@@ -122,6 +125,35 @@ async def proxy_checkout(request: Request):
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Serviço Auth indisponível: {exc}")
 
 
+def _proxy_auth(method: str, path: str, request: Request):
+    auth_header = request.headers.get("authorization")
+    headers = {"Authorization": auth_header} if auth_header else {}
+    try:
+        resp = requests.request(method, f"{AUTH_SERVICE_URL}{path}", headers=headers, timeout=5.0)
+        try:
+            corpo = resp.json()
+        except Exception:
+            corpo = {"detail": resp.text}
+        return JSONResponse(status_code=resp.status_code, content=corpo)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Serviço Auth indisponível: {exc}")
+
+
+@app.get("/api/usuarios/me")
+async def proxy_usuario_me(request: Request):
+    return _proxy_auth("GET", "/api/usuarios/me", request)
+
+
+@app.post("/api/assinaturas/portal")
+async def proxy_portal(request: Request):
+    return _proxy_auth("POST", "/portal", request)
+
+
+@app.get("/api/admin/metricas")
+async def proxy_metricas_admin(request: Request):
+    return _proxy_auth("GET", "/api/admin/metricas", request)
+
+
 # =====================================================================
 # ROTAS DO CATÁLOGO DE MATERIAIS / PRODUTOS
 # =====================================================================
@@ -196,9 +228,33 @@ def listar_produtos(db: Session = Depends(get_db)):
 
 
 @app.post("/api/itens")
-async def criar_item(request: Request, db: Session = Depends(get_db)):
+async def criar_item(request: Request, usuario: dict = Depends(obter_usuario_atual), db: Session = Depends(get_db)):
     try:
         dados = await request.json()
+        # O dono do anúncio vem do token, nunca do corpo da requisição
+        dados["usuario_id"] = usuario["usuario_id"]
+
+        # Limite por plano (Atividade 11): Free = LIMITE_FREE anúncios por mês; Pro = ilimitado.
+        # O plano é lido do banco (e não do JWT) para refletir o webhook sem novo login.
+        plano_row = db.execute(
+            text("SELECT plano, status_assinatura FROM usuarios WHERE id = :id"),
+            {"id": usuario["usuario_id"]},
+        ).first()
+        eh_pro = bool(plano_row and plano_row[0] == "pro" and plano_row[1] == "active")
+        if not eh_pro:
+            inicio_mes = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            consulta = db.query(models.Produto).filter(models.Produto.usuario_id == usuario["usuario_id"])
+            if hasattr(models.Produto, "criado_em"):
+                consulta = consulta.filter(models.Produto.criado_em >= inicio_mes)
+            usados = consulta.count()
+            if usados >= LIMITE_FREE:
+                return JSONResponse(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    content={"detail": (
+                        f"Limite do plano Free atingido: {LIMITE_FREE} anúncios por mês "
+                        f"({usados}/{LIMITE_FREE} usados). Assine o plano Pro para anunciar sem limite."
+                    )},
+                )
         
         # Mapeia dinamicamente apenas as colunas que existem no modelo Produto
         atributos_produto = {c.name for c in models.Produto.__table__.columns} if hasattr(models.Produto, "__table__") else set()
