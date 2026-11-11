@@ -1,0 +1,143 @@
+# Stack de PRODUCAO (Portainer): usa imagens prontas do GHCR, sem build no servidor.
+# Variaveis de ambiente (nomes) a preencher no Portainer: veja .env.example
+services:
+  mariadb:
+    image: mariadb:10.11
+    container_name: gabriel_mariadb
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-campuswap_db}
+      - MYSQL_USER=${MYSQL_USER:-campuswap_user}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    volumes:
+      - gabriel_mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "${MYSQL_USER:-campuswap_user}", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    networks: [campuswap_net]
+
+  redis:
+    image: redis:7-alpine
+    container_name: gabriel_redis
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    networks: [campuswap_net]
+
+  minio:
+    image: scality/s3server:latest
+    container_name: gabriel_minio
+    restart: always
+    environment:
+      - SCALITY_ACCESS_KEY_ID=${MINIO_ACCESS_KEY:-minioadmin}
+      - SCALITY_SECRET_ACCESS_KEY=${MINIO_SECRET_KEY:-miniopassword123}
+      - S3BACKEND=mem
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks: [campuswap_net]
+
+  log_service:
+    image: ghcr.io/gabriel33-fis/campuswap/log_service:latest
+    container_name: gabriel_log_service
+    restart: always
+    command: uvicorn main:app --host 0.0.0.0 --port 6000
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on: [redis]
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    networks: [campuswap_net]
+
+  auth_service:
+    image: ghcr.io/gabriel33-fis/campuswap/auth_service:latest
+    container_name: gabriel_auth_service
+    restart: always
+    command: uvicorn main:app --host 0.0.0.0 --port 5000
+    environment:
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-campuswap_user}:${MYSQL_PASSWORD}@mariadb:3306/${MYSQL_DATABASE:-campuswap_db}
+      - JWT_SECRET=${JWT_SECRET}
+      - LOG_SERVICE_URL=http://log_service:6000
+      - MAILTRAP_HOST=sandbox.smtp.mailtrap.io
+      - MAILTRAP_PORT=2525
+      - MAILTRAP_USER=${MAILTRAP_USER}
+      - MAILTRAP_PASS=${MAILTRAP_PASS}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_PRICE_ID=${STRIPE_PRICE_ID}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+      - CHECKOUT_SUCCESS_URL=${CHECKOUT_SUCCESS_URL}
+      - CHECKOUT_CANCEL_URL=${CHECKOUT_CANCEL_URL}
+      - FRONTEND_URL=${FRONTEND_URL}
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      log_service:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks: [campuswap_net]
+
+  catalogo_service:
+    image: ghcr.io/gabriel33-fis/campuswap/catalogo_service:latest
+    container_name: gabriel_catalogo_service
+    restart: always
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8207:8000"
+    environment:
+      - AUTH_SERVICE_URL=http://auth_service:5000
+      - LOG_SERVICE_URL=http://log_service:6000
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-campuswap_user}:${MYSQL_PASSWORD}@mariadb:3306/${MYSQL_DATABASE:-campuswap_db}
+      - JWT_SECRET=${JWT_SECRET}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MINIO_ENDPOINT=minio:8000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-miniopassword123}
+      - MINIO_BUCKET_NAME=campuswap-fotos
+      - MINIO_SECURE=false
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+      - CHECKOUT_SUCCESS_URL=${CHECKOUT_SUCCESS_URL}
+      - CHECKOUT_CANCEL_URL=${CHECKOUT_CANCEL_URL}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - LIMITE_FREE_ANUNCIOS=${LIMITE_FREE_ANUNCIOS:-3}
+    depends_on:
+      - mariadb
+      - redis
+      - minio
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks: [campuswap_net]
+
+volumes:
+  gabriel_mariadb_data:
+
+networks:
+  campuswap_net:
+    driver: bridge
