@@ -1,5 +1,6 @@
 # Stack de PRODUCAO (Portainer): usa imagens prontas do GHCR, sem build no servidor.
 # Variaveis de ambiente (nomes) a preencher no Portainer: veja .env.example
+# MYSQL_PASSWORD_URL: opcional; senha do banco com caracteres especiais codificados (@ = %40, $ = %24, * = %2A, ^ = %5E, # = %23, / = %2F, : = %3A, % = %25).
 services:
   mariadb:
     image: mariadb:10.11
@@ -75,7 +76,7 @@ services:
     restart: always
     command: uvicorn main:app --host 0.0.0.0 --port 5000
     environment:
-      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-campuswap_user}:${MYSQL_PASSWORD}@mariadb:3306/${MYSQL_DATABASE:-campuswap_db}
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-campuswap_user}:${MYSQL_PASSWORD_URL:-${MYSQL_PASSWORD}}@mariadb:3306/${MYSQL_DATABASE:-campuswap_db}
       - JWT_SECRET=${JWT_SECRET}
       - LOG_SERVICE_URL=http://log_service:6000
       - MAILTRAP_HOST=sandbox.smtp.mailtrap.io
@@ -110,7 +111,7 @@ services:
     environment:
       - AUTH_SERVICE_URL=http://auth_service:5000
       - LOG_SERVICE_URL=http://log_service:6000
-      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-campuswap_user}:${MYSQL_PASSWORD}@mariadb:3306/${MYSQL_DATABASE:-campuswap_db}
+      - DATABASE_URL=mysql+pymysql://${MYSQL_USER:-campuswap_user}:${MYSQL_PASSWORD_URL:-${MYSQL_PASSWORD}}@mariadb:3306/${MYSQL_DATABASE:-campuswap_db}
       - JWT_SECRET=${JWT_SECRET}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
