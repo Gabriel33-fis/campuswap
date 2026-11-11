@@ -154,6 +154,26 @@ async def proxy_metricas_admin(request: Request):
     return _proxy_auth("GET", "/api/admin/metricas", request)
 
 
+@app.post("/api/assinaturas/webhook")
+async def proxy_webhook_stripe(request: Request):
+    """Repassa o webhook do Stripe ao auth_service (rede interna), sem alterar o corpo.
+    O corpo bruto e o cabecalho Stripe-Signature precisam chegar intactos para a validacao."""
+    corpo = await request.body()
+    headers = {
+        "Stripe-Signature": request.headers.get("stripe-signature", ""),
+        "Content-Type": request.headers.get("content-type", "application/json"),
+    }
+    try:
+        resp = requests.post(f"{AUTH_SERVICE_URL}/api/assinaturas/webhook", data=corpo, headers=headers, timeout=10.0)
+        try:
+            conteudo = resp.json()
+        except Exception:
+            conteudo = {"detail": resp.text}
+        return JSONResponse(status_code=resp.status_code, content=conteudo)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Serviço Auth indisponível: {exc}")
+
+
 # =====================================================================
 # ROTAS DO CATÁLOGO DE MATERIAIS / PRODUTOS
 # =====================================================================
