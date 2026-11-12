@@ -6,6 +6,12 @@ Documento integrante da **Atividade 8** da disciplina de Introdução à Computa
 
 > **Relatório P2 (individual):** [docs/P2_ISW055_Gabriel_Graciano.pdf](./docs/P2_ISW055_Gabriel_Graciano.pdf) — arquitetura e atividades 7 a 11, disciplina ISW055, professor [siriani](https://github.com/siriani).
 
+> **Alterações posteriores à entrega da P2 (12/11/2026).** O relatório P2 descreve a versão entregue em 11/11/2026 e não foi alterado. Depois dela, sem mudar a arquitetura:
+> - o link do e-mail de recuperação de senha passou a usar `PUBLIC_BASE_URL` em vez de cair em `localhost` (PR #18);
+> - as fotos dos anúncios ficaram persistentes: MinIO com `S3BACKEND=file` e volumes (PR #19); no relatório, o MinIO aparece em memória, como estava na entrega;
+> - novo visual escuro e minimalista, com ícones de contorno e novo logotipo (PR #20); os prints do relatório mostram o visual anterior;
+> - script `db/001_dominio.sql` com o esquema das tabelas (PR #14).
+
 ---
 
 ## 1. Especificação Funcional (O Que o Sistema Faz)
