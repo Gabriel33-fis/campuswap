@@ -92,6 +92,29 @@
     .border-indigo-200,.border-indigo-400,.border-blue-200,.border-red-200{border-color:#4a4a4a!important}
     .ring-indigo-500{--tw-ring-color:#ececec!important}
     .bg-indigo-50.text-indigo-700{border:1px solid #2e2e2e!important;font-weight:600}
+
+    /* ===== Smartphone / tablet (até 1023px) ===== */
+    @media (max-width:1023px){
+      /* a coluna lateral vira uma faixa de abas com rolagem horizontal, acima do conteúdo */
+      #visao-autenticada aside{display:contents}
+      #visao-autenticada aside > *{margin-top:0 !important}
+      #visao-autenticada aside > div:nth-child(1){display:none}          /* cartão do perfil: o acesso fica no cabeçalho */
+      #visao-autenticada aside > div:nth-child(2){order:-1;display:flex;gap:4px;overflow-x:auto;padding:8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+      #visao-autenticada aside > div:nth-child(2)::-webkit-scrollbar{display:none}
+      #visao-autenticada aside > div:nth-child(2) > button{width:auto;flex:none;white-space:nowrap}
+      #visao-autenticada aside > div:nth-child(3){order:2}               /* cartão do plano vai para o fim */
+      /* a página nunca deve rolar para os lados */
+      html,body{overflow-x:hidden}
+      .overflow-x-auto{-webkit-overflow-scrolling:touch}
+    }
+    @media (max-width:767px){
+      header > div{flex-wrap:wrap;row-gap:10px}
+      #busca-nav-wrap.busca-ativa{display:flex;order:3;width:100%}
+    }
+    @media (max-width:639px){
+      #nav-actions button[title="Meu perfil"] span{display:none}         /* só o ícone, para não apertar o logotipo */
+      #nav-actions{gap:8px}
+    }
   </style>
 </head>
 <body class="min-h-screen flex flex-col justify-between antialiased">
@@ -559,6 +582,9 @@
         document.getElementById(mapa[k]).classList.toggle('hidden', k !== aba);
         document.getElementById('btn-menu-' + k).className = k === aba ? ativo : inativo;
       });
+      // no celular o menu é uma faixa rolável: mantém a aba ativa visível
+      const btnAtivo = document.getElementById('btn-menu-' + aba);
+      if (btnAtivo && btnAtivo.scrollIntoView) btnAtivo.scrollIntoView({ block: 'nearest', inline: 'center' });
       if (aba === 'overview') renderizarGraficos();
       if (aba === 'vitrine') renderizarVitrine();
       if (aba === 'meus-anuncios') renderizarMeusAnuncios();
@@ -604,6 +630,7 @@
       document.getElementById('visao-autenticada').classList.toggle('hidden', !logado);
       // a busca do cabeçalho só faz sentido para quem está logado (vitrine)
       document.getElementById('busca-nav-wrap').classList.toggle('md:flex', logado);
+      document.getElementById('busca-nav-wrap').classList.toggle('busca-ativa', logado);
 
       if (logado) {
         const user = JSON.parse(userRaw);
