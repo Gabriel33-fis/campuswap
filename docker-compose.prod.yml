@@ -46,7 +46,12 @@ services:
     environment:
       - SCALITY_ACCESS_KEY_ID=${MINIO_ACCESS_KEY:-minioadmin}
       - SCALITY_SECRET_ACCESS_KEY=${MINIO_SECRET_KEY:-miniopassword123}
-      - S3BACKEND=mem
+      - S3BACKEND=file
+      - S3DATAPATH=/usr/src/app/localData
+      - S3METADATAPATH=/usr/src/app/localMetadata
+    volumes:
+      - gabriel_minio_data:/usr/src/app/localData
+      - gabriel_minio_meta:/usr/src/app/localMetadata
     deploy:
       resources:
         limits:
@@ -137,6 +142,8 @@ services:
 
 volumes:
   gabriel_mariadb_data:
+  gabriel_minio_data:
+  gabriel_minio_meta:
 
 networks:
   campuswap_net:
