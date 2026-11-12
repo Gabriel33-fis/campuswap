@@ -7,14 +7,20 @@ MAILTRAP_HOST = os.getenv("MAILTRAP_HOST", "sandbox.smtp.mailtrap.io")
 MAILTRAP_PORT = int(os.getenv("MAILTRAP_PORT", 2525))
 MAILTRAP_USER = os.getenv("MAILTRAP_USER")
 MAILTRAP_PASS = os.getenv("MAILTRAP_PASS")
-BASE_PUBLIC_URL = os.getenv("BASE_PUBLIC_URL", "http://localhost:8207")
+# A variavel do compose se chama PUBLIC_BASE_URL (BASE_PUBLIC_URL e mantida por compatibilidade).
+BASE_PUBLIC_URL = (
+    os.getenv("PUBLIC_BASE_URL")
+    or os.getenv("BASE_PUBLIC_URL")
+    or os.getenv("FRONTEND_URL")
+    or "http://localhost:8207"
+).rstrip("/")
 
 def enviar_email_recuperacao(destinatario: str, token: str):
     link_recuperacao = f"{BASE_PUBLIC_URL}/?token_reset={token}"
     
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Recuperação de Senha - Catálogo Tom Hanks"
-    msg["From"] = "no-reply@tomhanks-catalogo.com"
+    msg["Subject"] = "Recuperação de Senha - CampuSwap"
+    msg["From"] = "no-reply@campuswap.app"
     msg["To"] = destinatario
 
     corpo_html = f"""
