@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    :root{--ink:#0a0a0a;--violet:#0a0a0a;--violet-d:#0a0a0a;--lime:#ffffff;--paper:#fafafa;--muted:#6b6b6b;--line:#e5e5e5}
+    :root{--ink:#ececec;--violet:#ececec;--violet-d:#ececec;--lime:#161616;--paper:#161616;--muted:#8c8c8c;--line:#2e2e2e;--surface:#1e1e1e;--surface2:#262626}
     body{font-family:'DM Sans',system-ui,sans-serif;background:var(--paper);color:var(--ink)}
     h1,h2,h3,h4,.display{font-family:'Bricolage Grotesque','DM Sans',sans-serif;letter-spacing:-.02em}
     :focus-visible{outline:3px solid var(--violet);outline-offset:2px}
@@ -44,44 +44,53 @@
     .card-item{transition:transform .2s,box-shadow .2s}
     #btn-recuperacao:disabled{opacity:.5;cursor:not-allowed}
 
-    /* ===== Tema monocromatico (preto e branco, icones de contorno) ===== */
-    body{background:#fafafa;color:#0a0a0a}
-    :focus-visible{outline:2px solid #0a0a0a;outline-offset:2px}
+    /* ===== Tema escuro minimalista (preto e cinza, icones de contorno) ===== */
+    html,body{background:#161616;color:#ececec;color-scheme:dark}
+    :focus-visible{outline:2px solid #ececec;outline-offset:2px}
     .ph{vertical-align:-.15em;line-height:1}
-    .btn-main{background:#0a0a0a;color:#fff;border:1px solid #0a0a0a;border-radius:10px;box-shadow:none;font-weight:600}
-    .btn-main:hover{transform:none;box-shadow:none;background:#262626}
-    .btn-ghost{border:1px solid rgba(255,255,255,.5);border-radius:10px;font-weight:600}
-    .hero{background:#0a0a0a;color:#fff}
-    .hero .btn-main,[style*="background:var(--ink)"] .btn-main{background:#fff;color:#0a0a0a;border-color:#fff}
-    .hero .btn-main:hover,[style*="background:var(--ink)"] .btn-main:hover{background:#e5e5e5}
-    .tag-price::after{background:#0a0a0a;height:2px}
-    .hero .tag-price::after{background:#0a0a0a}
-    [style*="background:var(--lime)"]{background:#f2f2f2!important;border:1px solid #0a0a0a;border-radius:12px}
-    [style*="background:var(--ink)"]{border-radius:14px!important;box-shadow:none!important}
+    ::placeholder{color:#6b6b6b!important}
+    input,select,textarea{background:#1e1e1e;color:#ececec;border-color:#2e2e2e}
+    .btn-main{background:#ececec;color:#0a0a0a;border:1px solid #ececec;border-radius:10px;box-shadow:none;font-weight:600}
+    .btn-main:hover{transform:none;box-shadow:none;background:#fff}
+    .btn-ghost{border:1px solid #2e2e2e;border-radius:10px;font-weight:600;color:#ececec}
+    .btn-ghost:hover{background:#1e1e1e}
+    .hero{background:#161616;color:#ececec;border-bottom:1px solid #2e2e2e}
+    [style*="background:var(--ink)"]{background:#1e1e1e!important;border:1px solid #2e2e2e;border-radius:14px!important;box-shadow:none!important;color:#ececec}
+    [style*="background:var(--ink)"] .btn-main{background:#ececec;color:#0a0a0a}
+    [style*="background:var(--lime)"]{background:#1e1e1e!important;border:1px solid #2e2e2e;border-radius:12px;color:#ececec}
+    [style*="color:var(--lime)"]{color:#8c8c8c!important}
+    [style*="background:var(--violet)"],.text-white[style*="background:var(--violet)"]{background:#ececec!important;color:#0a0a0a!important}
+    [style*="background:var(--violet)"] .text-white{color:#0a0a0a!important}
+    .tag-price::after{background:#ececec;height:2px}
     .rounded-3xl,.rounded-2xl,#visao-autenticada .bg-white{border-radius:14px!important}
     .rounded-xl{border-radius:10px!important}
     .shadow-2xl,.shadow-md,.shadow,.shadow-sm,.shadow-lg,#visao-autenticada .shadow-sm{box-shadow:none!important}
-    #visao-autenticada .bg-white,.card-item{border:1px solid #e5e5e5}
-    header{background:rgba(255,255,255,.92)!important;border-bottom:1px solid #0a0a0a!important}
-    .card-item:hover{transform:none;border-color:#0a0a0a;box-shadow:none}
-    input[type=range]{background:linear-gradient(90deg,#0a0a0a,#d4d4d4);height:4px}
-    input[type=range]::-webkit-slider-thumb{border:2px solid #0a0a0a;width:22px;height:22px}
-    input[type=range]::-moz-range-thumb{border:2px solid #0a0a0a;width:16px;height:16px}
-    details.faq summary::after{color:#0a0a0a}
-    /* cores do Tailwind -> escala de cinza */
-    .bg-indigo-50,.bg-indigo-100,.bg-blue-50,.bg-blue-100,.bg-green-100,.bg-yellow-100,.bg-purple-100,.bg-red-50{background:#f2f2f2!important}
-    .bg-indigo-600,.bg-red-500,.hover\:bg-indigo-700:hover,.hover\:bg-red-600:hover{background:#0a0a0a!important;color:#fff!important}
-    .text-indigo-100,.text-indigo-200{color:#d4d4d4!important}
-    .text-indigo-700,.text-indigo-800,.text-green-600,.text-green-700,.text-green-800,.text-blue-600,.text-blue-700,.text-blue-800,.text-yellow-800,.text-purple-800,.text-red-500,.text-red-600,.hover\:text-red-600:hover,.text-yellow-400,.text-green-400{color:#0a0a0a!important}
-    .border-indigo-200,.border-indigo-400,.border-blue-200,.border-red-200{border-color:#0a0a0a!important}
-    .hover\:bg-indigo-50:hover,.hover\:bg-red-50:hover,.hover\:bg-gray-50:hover{background:#f2f2f2!important}
-    .ring-indigo-500{--tw-ring-color:#0a0a0a!important}
-    .bg-gray-100{background:#f2f2f2}
-    .border-gray-200,.border-gray-300{border-color:#e5e5e5}
-    .border-gray-300{border-color:#d4d4d4}
-    h1,h2,h3,h4,.display{letter-spacing:-.03em}
-    #btn-menu-overview,#btn-menu-vitrine,#btn-menu-meus-anuncios,#btn-menu-mensagens,#btn-menu-perfil,#btn-menu-admin{border:1px solid transparent}
-    .bg-indigo-50.text-indigo-700{border:1px solid #0a0a0a!important;font-weight:600}
+    header{background:rgba(22,22,22,.92)!important;border-bottom:1px solid #2e2e2e!important}
+    .card-item:hover{transform:none;border-color:#4a4a4a;box-shadow:none}
+    input[type=range]{background:linear-gradient(90deg,#ececec,#3d3d3d);height:4px}
+    input[type=range]::-webkit-slider-thumb{background:#161616;border:2px solid #ececec;width:22px;height:22px}
+    input[type=range]::-moz-range-thumb{background:#161616;border:2px solid #ececec;width:16px;height:16px}
+    details.faq summary::after{color:#ececec}
+    h1,h2,h3,h4,.display{letter-spacing:-.03em;color:#ececec}
+    /* superficies, textos e bordas do Tailwind */
+    .bg-white{background:#1e1e1e!important;color:#ececec}
+    .bg-gray-50{background:#161616!important}
+    .bg-gray-100,.bg-gray-200{background:#262626!important}
+    .hover\:bg-gray-50:hover,.hover\:bg-gray-200:hover,.hover\:bg-indigo-50:hover,.hover\:bg-red-50:hover{background:#262626!important}
+    .text-gray-900,.text-gray-800,.text-gray-700,.text-gray-600{color:#d4d4d4!important}
+    .text-gray-500,.text-gray-400,.text-gray-300{color:#8c8c8c!important}
+    .border-gray-100,.border-gray-200,.border-gray-300,.border,.divide-y>*{border-color:#2e2e2e}
+    .bg-gray-900{background:#ececec!important;color:#0a0a0a!important}
+    .bg-black{background:#000!important}
+    #visao-autenticada .bg-white,.card-item{border:1px solid #2e2e2e}
+    /* cores de destaque -> escala de cinza */
+    .bg-indigo-50,.bg-indigo-100,.bg-blue-50,.bg-blue-100,.bg-green-100,.bg-yellow-100,.bg-purple-100,.bg-red-50{background:#262626!important}
+    .bg-indigo-600,.bg-red-500,.hover\:bg-indigo-700:hover,.hover\:bg-red-600:hover{background:#ececec!important;color:#0a0a0a!important}
+    .text-indigo-100,.text-indigo-200{color:#a3a3a3!important}
+    .text-indigo-700,.text-indigo-800,.text-green-600,.text-green-700,.text-green-800,.text-blue-600,.text-blue-700,.text-blue-800,.text-yellow-800,.text-purple-800,.text-red-500,.text-red-600,.hover\:text-red-600:hover,.text-yellow-400,.text-green-400{color:#ececec!important}
+    .border-indigo-200,.border-indigo-400,.border-blue-200,.border-red-200{border-color:#4a4a4a!important}
+    .ring-indigo-500{--tw-ring-color:#ececec!important}
+    .bg-indigo-50.text-indigo-700{border:1px solid #2e2e2e!important;font-weight:600}
   </style>
 </head>
 <body class="min-h-screen flex flex-col justify-between antialiased">
@@ -902,9 +911,10 @@
       const a = document.getElementById('graficoAtividade');
       if (a) {
         if (chartAtividade) chartAtividade.destroy();
+        Chart.defaults.color = '#8c8c8c'; Chart.defaults.borderColor = '#2e2e2e';
         chartAtividade = new Chart(a, {
           type: 'bar',
-          data: { labels: diaLabels, datasets: [{ label: 'Interações', data: [12, 19, 8, 15, 22, 14, todosItens.length + 5], backgroundColor: '#0a0a0a', borderRadius: 4 }] },
+          data: { labels: diaLabels, datasets: [{ label: 'Interações', data: [12, 19, 8, 15, 22, 14, todosItens.length + 5], backgroundColor: '#ececec', borderRadius: 4 }] },
           options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
         });
       }
@@ -915,7 +925,7 @@
         todosItens.forEach(it => { const k = (it.modalidade || 'venda').toLowerCase(); c[k] !== undefined ? c[k]++ : c.venda++; });
         chartModalidades = new Chart(m, {
           type: 'doughnut',
-          data: { labels: ['Venda', 'Troca', 'Doação', 'Empréstimo'], datasets: [{ data: [c.venda || 4, c.troca || 2, c.doacao || 3, c.emprestimo || 1], backgroundColor: ['#0a0a0a', '#525252', '#a3a3a3', '#d4d4d4'], borderWidth: 0 }] },
+          data: { labels: ['Venda', 'Troca', 'Doação', 'Empréstimo'], datasets: [{ data: [c.venda || 4, c.troca || 2, c.doacao || 3, c.emprestimo || 1], backgroundColor: ['#ececec', '#a3a3a3', '#6b6b6b', '#3d3d3d'], borderColor: '#1e1e1e', borderWidth: 0 }] },
           options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }
         });
       }
