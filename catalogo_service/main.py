@@ -1,5 +1,6 @@
+import os
 import pathlib
-FOTOS_DIR = pathlib.Path('/app/uploads')
+FOTOS_DIR = pathlib.Path(os.getenv('FOTOS_DIR', '/app/uploads'))
 FOTOS_DIR.mkdir(parents=True, exist_ok=True)
 import os
 import io
@@ -10,6 +11,7 @@ import requests
 import redis
 from fastapi import FastAPI, HTTPException, Depends, Request, Response, UploadFile, File, status
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -67,12 +69,40 @@ app = FastAPI(title="CampusSwap - Catalogo Service")
 Instrumentator().instrument(app).expose(app)
 
 
+# Arquivos estáticos do front (CSS e JS separados do HTML)
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+class StaticComCache(StaticFiles):
+    """Serve /static com cache de 1 dia. O HTML acrescenta ?v=<data de modificação>
+    nos links, então cada deploy com arquivo novo invalida o cache sozinho."""
+
+    def file_response(self, *args, **kwargs):
+        resposta = super().file_response(*args, **kwargs)
+        resposta.headers["Cache-Control"] = "public, max-age=86400"
+        return resposta
+
+
+if STATIC_DIR.exists():
+    app.mount("/static", StaticComCache(directory=str(STATIC_DIR)), name="static")
+
+
+def _versao_estatico(nome: str) -> str:
+    try:
+        return str(int((STATIC_DIR / nome).stat().st_mtime))
+    except OSError:
+        return "0"
+
+
 # Rota principal (Serve a página do frontend)
 @app.get("/", response_class=HTMLResponse)
 def pagina_inicial():
     caminho_html = Path(__file__).parent / "index.html"
     if caminho_html.exists():
-        return HTMLResponse(content=caminho_html.read_text(encoding="utf-8"))
+        html = caminho_html.read_text(encoding="utf-8")
+        for arquivo in ("app.css", "app.js"):
+            html = html.replace(f'/static/{arquivo}"', f'/static/{arquivo}?v={_versao_estatico(arquivo)}"')
+        return HTMLResponse(content=html)
     return HTMLResponse(content="<h1>Erro: index.html não encontrado no catálogo</h1>", status_code=404)
 
 
