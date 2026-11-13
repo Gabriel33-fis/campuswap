@@ -10,6 +10,13 @@ def test_pagina_inicial_e_arquivos_estaticos(client):
     assert client.get("/static/app.css").status_code == 200
 
 
+def test_botao_de_tema_claro_escuro_presente(client):
+    html = client.get("/").text
+    assert 'id="btn-tema-claro"' in html and 'id="btn-tema-escuro"' in html
+    assert 'data-theme="light"' in client.get("/static/app.css").text
+    assert "function aplicarTema" in client.get("/static/app.js").text
+
+
 def test_estaticos_declaram_utf8(client):
     for arquivo in ("app.js", "app.css"):
         assert "charset=utf-8" in client.get(f"/static/{arquivo}").headers["content-type"]

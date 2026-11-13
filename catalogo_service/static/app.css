@@ -109,4 +109,59 @@ h1,h2,h3,h4,.display{letter-spacing:-.03em;color:#ececec}
 .pag-btn:hover:not(:disabled){background:var(--surface2)}
 .pag-btn:disabled{opacity:.35;cursor:not-allowed}
 .card-destaque{border-color:#8c8c8c !important}
-.selo-destaque{background:var(--ink);color:#161616}
+.selo-destaque{background:var(--ink);color:var(--paper)}
+
+/* ===== Botão sol/lua ===== */
+.tema-toggle{display:inline-flex;align-items:center;gap:2px;padding:3px;border-radius:999px;border:1px solid var(--line);background:var(--surface)}
+.tema-toggle button{width:30px;height:30px;border-radius:999px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:1rem}
+.tema-toggle button:hover{color:var(--ink)}
+.tema-toggle button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+
+/* ===== Tema claro (html[data-theme="light"]) — sobrepõe o tema escuro acima ===== */
+html[data-theme="light"]{--ink:#161616;--violet:#161616;--violet-d:#161616;--lime:#f6f6f4;--paper:#f6f6f4;--muted:#6b6b6b;--line:#e1e1de;--surface:#ffffff;--surface2:#efefec}
+html[data-theme="light"],html[data-theme="light"] body{background:#f6f6f4;color:#161616;color-scheme:light}
+html[data-theme="light"] :focus-visible{outline-color:#161616}
+html[data-theme="light"] ::placeholder{color:#9a9a96!important}
+html[data-theme="light"] input,html[data-theme="light"] select,html[data-theme="light"] textarea{background:#ffffff;color:#161616;border-color:#e1e1de}
+html[data-theme="light"] .btn-main{background:#161616;color:#ffffff;border-color:#161616}
+html[data-theme="light"] .btn-main:hover{background:#000}
+html[data-theme="light"] .btn-ghost{border-color:#cfcfca;color:#161616}
+html[data-theme="light"] .btn-ghost:hover{background:#efefec}
+html[data-theme="light"] .hero{background:#f6f6f4;color:#161616;border-bottom-color:#e1e1de}
+html[data-theme="light"] [style*="background:var(--ink)"]{background:#ffffff!important;border-color:#e1e1de;color:#161616!important}
+html[data-theme="light"] [style*="background:var(--ink)"] .btn-main{background:#161616;color:#ffffff}
+html[data-theme="light"] [style*="background:var(--lime)"]{background:#efefec!important;border-color:#e1e1de;color:#161616}
+html[data-theme="light"] [style*="color:var(--lime)"]{color:#6b6b6b!important}
+html[data-theme="light"] [style*="background:var(--violet)"],html[data-theme="light"] .text-white[style*="background:var(--violet)"]{background:#161616!important;color:#ffffff!important}
+html[data-theme="light"] [style*="background:var(--violet)"] .text-white{color:#ffffff!important}
+html[data-theme="light"] .tag-price::after{background:#161616}
+html[data-theme="light"] header{background:rgba(246,246,244,.92)!important;border-bottom-color:#e1e1de!important}
+html[data-theme="light"] .card-item:hover{border-color:#b5b5b0}
+html[data-theme="light"] input[type=range]{background:linear-gradient(90deg,#161616,#cfcfca)}
+html[data-theme="light"] input[type=range]::-webkit-slider-thumb{background:#f6f6f4;border-color:#161616}
+html[data-theme="light"] input[type=range]::-moz-range-thumb{background:#f6f6f4;border-color:#161616}
+html[data-theme="light"] details.faq summary::after{color:#161616}
+html[data-theme="light"] h1,html[data-theme="light"] h2,html[data-theme="light"] h3,html[data-theme="light"] h4,html[data-theme="light"] .display{color:#161616}
+html[data-theme="light"] .bg-white{background:#ffffff!important;color:#161616}
+html[data-theme="light"] .bg-gray-50{background:#f6f6f4!important}
+html[data-theme="light"] .bg-gray-100,html[data-theme="light"] .bg-gray-200{background:#efefec!important}
+html[data-theme="light"] .hover\:bg-gray-50:hover,html[data-theme="light"] .hover\:bg-gray-200:hover,html[data-theme="light"] .hover\:bg-indigo-50:hover,html[data-theme="light"] .hover\:bg-red-50:hover{background:#efefec!important}
+html[data-theme="light"] .text-gray-900,html[data-theme="light"] .text-gray-800,html[data-theme="light"] .text-gray-700,html[data-theme="light"] .text-gray-600{color:#2b2b2b!important}
+html[data-theme="light"] .text-gray-500,html[data-theme="light"] .text-gray-400,html[data-theme="light"] .text-gray-300{color:#6b6b6b!important}
+html[data-theme="light"] .border-gray-100,html[data-theme="light"] .border-gray-200,html[data-theme="light"] .border-gray-300,html[data-theme="light"] .border,html[data-theme="light"] .divide-y>*,html[data-theme="light"] #visao-autenticada .bg-white,html[data-theme="light"] .card-item{border-color:#e1e1de}
+html[data-theme="light"] .bg-gray-900{background:#161616!important;color:#f6f6f4!important}   /* aviso (toast) continua escuro nos dois temas */
+html[data-theme="light"] .bg-indigo-50,html[data-theme="light"] .bg-indigo-100,html[data-theme="light"] .bg-blue-50,html[data-theme="light"] .bg-blue-100,html[data-theme="light"] .bg-green-100,html[data-theme="light"] .bg-yellow-100,html[data-theme="light"] .bg-purple-100,html[data-theme="light"] .bg-red-50{background:#efefec!important}
+html[data-theme="light"] .bg-indigo-600,html[data-theme="light"] .bg-red-500,html[data-theme="light"] .hover\:bg-indigo-700:hover,html[data-theme="light"] .hover\:bg-red-600:hover{background:#161616!important;color:#ffffff!important}
+html[data-theme="light"] .text-indigo-100,html[data-theme="light"] .text-indigo-200{color:#6b6b6b!important}
+html[data-theme="light"] .text-indigo-700,html[data-theme="light"] .text-indigo-800,html[data-theme="light"] .text-green-600,html[data-theme="light"] .text-green-700,html[data-theme="light"] .text-green-800,html[data-theme="light"] .text-blue-600,html[data-theme="light"] .text-blue-700,html[data-theme="light"] .text-blue-800,html[data-theme="light"] .text-yellow-800,html[data-theme="light"] .text-purple-800,html[data-theme="light"] .text-red-500,html[data-theme="light"] .text-red-600,html[data-theme="light"] .hover\:text-red-600:hover{color:#161616!important}
+html[data-theme="light"] .border-indigo-200,html[data-theme="light"] .border-indigo-400,html[data-theme="light"] .border-blue-200,html[data-theme="light"] .border-red-200{border-color:#cfcfca!important}
+html[data-theme="light"] .ring-indigo-500{--tw-ring-color:#161616!important}
+html[data-theme="light"] .bg-indigo-50.text-indigo-700{border-color:#e1e1de!important}
+html[data-theme="light"] .card-destaque{border-color:#6b6b6b!important}
+/* a logo é branca: no tema claro ela é invertida para preto */
+html[data-theme="light"] img[alt="Logotipo do CampuSwap"]{filter:invert(1)}
+#campo-busca-nav{background:transparent !important}
+@media (max-width:639px){
+  .acoes-topo{gap:8px}
+  .tema-toggle button{width:26px;height:26px;font-size:.9rem}
+}

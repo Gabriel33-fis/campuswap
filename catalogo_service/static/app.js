@@ -1,6 +1,22 @@
 /* CampuSwap - lógica da interface (SPA). Carregado com defer, depois de todo o HTML. */
 
 /* ---- parte 1 ---- */
+// ===== Tema claro/escuro (o escuro é o padrão; a escolha fica salva neste navegador) =====
+const PALETAS = {
+  dark:  { texto: '#8c8c8c', borda: '#2e2e2e', barra1: '#ececec', barra2: '#4a4a4a', donut: ['#ececec', '#a3a3a3', '#6b6b6b', '#3d3d3d'], fundo: '#1e1e1e' },
+  light: { texto: '#6b6b6b', borda: '#e1e1de', barra1: '#161616', barra2: '#b5b5b0', donut: ['#161616', '#6b6b6b', '#a3a3a3', '#d4d4d0'], fundo: '#ffffff' }
+};
+function temaAtual() { return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'; }
+function aplicarTema(tema, salvar = true) {
+  document.documentElement.dataset.theme = tema;
+  if (salvar) { try { localStorage.setItem('tema', tema); } catch (e) { /* armazenamento bloqueado: vale só nesta visita */ } }
+  const claro = tema === 'light';
+  const bC = document.getElementById('btn-tema-claro'), bE = document.getElementById('btn-tema-escuro');
+  if (bC) bC.setAttribute('aria-pressed', String(claro));
+  if (bE) bE.setAttribute('aria-pressed', String(!claro));
+  if (salvar && typeof renderizarGraficos === 'function' && localStorage.getItem('token')) renderizarGraficos();  // gráficos usam as cores do tema
+}
+aplicarTema(temaAtual(), false);   // sincroniza o botão com o tema que já foi aplicado no <head>
 const API_BASE = window.location.origin;
 let chartAtividade = null, chartModalidades = null, arquivoFotoItem = null;
 const POR_PAGINA = 9;
@@ -550,7 +566,8 @@ async function renderizarGraficos() {
   document.getElementById('met-valor').textContent = `R$ ${Number(d.valor_total).toFixed(2).replace('.', ',')}`;
   document.getElementById('met-foto').textContent = `${d.com_foto_pct}%`;
 
-  Chart.defaults.color = '#8c8c8c'; Chart.defaults.borderColor = '#2e2e2e';
+  const pal = PALETAS[temaAtual()];
+  Chart.defaults.color = pal.texto; Chart.defaults.borderColor = pal.borda;
   const a = document.getElementById('graficoAtividade');
   if (chartAtividade) chartAtividade.destroy();
   chartAtividade = new Chart(a, {
@@ -558,8 +575,8 @@ async function renderizarGraficos() {
     data: {
       labels: d.meus_por_dia.map(x => formatarDia(x.data)),
       datasets: [
-        { label: 'Meus anúncios', data: d.meus_por_dia.map(x => x.total), backgroundColor: '#ececec', borderRadius: 4 },
-        { label: 'Todo o campus', data: d.campus_por_dia.map(x => x.total), backgroundColor: '#4a4a4a', borderRadius: 4 }
+        { label: 'Meus anúncios', data: d.meus_por_dia.map(x => x.total), backgroundColor: pal.barra1, borderRadius: 4 },
+        { label: 'Todo o campus', data: d.campus_por_dia.map(x => x.total), backgroundColor: pal.barra2, borderRadius: 4 }
       ]
     },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
@@ -570,7 +587,7 @@ async function renderizarGraficos() {
   const c = d.por_modalidade;
   chartModalidades = new Chart(m, {
     type: 'doughnut',
-    data: { labels: ['Venda', 'Troca', 'Doação', 'Empréstimo'], datasets: [{ data: [c.venda, c.troca, c.doacao, c.emprestimo], backgroundColor: ['#ececec', '#a3a3a3', '#6b6b6b', '#3d3d3d'], borderColor: '#1e1e1e', borderWidth: 2 }] },
+    data: { labels: ['Venda', 'Troca', 'Doação', 'Empréstimo'], datasets: [{ data: [c.venda, c.troca, c.doacao, c.emprestimo], backgroundColor: pal.donut, borderColor: pal.fundo, borderWidth: 2 }] },
     options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }
   });
 }
