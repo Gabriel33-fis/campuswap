@@ -10,6 +10,11 @@ def test_pagina_inicial_e_arquivos_estaticos(client):
     assert client.get("/static/app.css").status_code == 200
 
 
+def test_estaticos_declaram_utf8(client):
+    for arquivo in ("app.js", "app.css"):
+        assert "charset=utf-8" in client.get(f"/static/{arquivo}").headers["content-type"]
+
+
 def test_criar_anuncio_sem_login_retorna_401(client):
     resposta = client.post("/api/itens", json={"titulo": "Calculadora"})
     assert resposta.status_code == 401
