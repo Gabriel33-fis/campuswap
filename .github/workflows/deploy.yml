@@ -9,13 +9,13 @@ permissions:
   packages: write
 
 jobs:
-  # CI: verifica se todo o codigo Python compila e se as dependencias instalam
+  # CI: compila o codigo e roda os testes automatizados (pytest) de cada servico
   test:
     name: CI - Verificacao do codigo
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Instalar dependencias dos tres servicos
@@ -24,8 +24,16 @@ jobs:
           pip install -r auth_service/requirements.txt
           pip install -r catalogo_service/requirements.txt
           pip install -r log_service/requirements.txt
+          pip install pytest httpx
       - name: Compilar o codigo Python
         run: python -m compileall -q auth_service catalogo_service log_service
+      # Cada servico tem modulos com o mesmo nome (main, models...), entao os testes rodam separados
+      - name: Testes - auth_service
+        working-directory: auth_service
+        run: python -m pytest -q
+      - name: Testes - catalogo_service
+        working-directory: catalogo_service
+        run: python -m pytest -q
 
   # CD: constroi as tres imagens e publica no GHCR
   build-and-push:
@@ -36,18 +44,18 @@ jobs:
       matrix:
         service: [auth_service, catalogo_service, log_service]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Nome do repositorio em minusculas e SHA curto
         id: vars
         run: |
           echo "repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
           echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v7
         with:
           context: ./${{ matrix.service }}
           push: true
