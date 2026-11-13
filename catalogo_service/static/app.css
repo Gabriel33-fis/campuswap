@@ -165,3 +165,9 @@ html[data-theme="light"] img[alt="Logotipo do CampuSwap"]{filter:invert(1)}
   .acoes-topo{gap:8px}
   .tema-toggle button{width:26px;height:26px;font-size:.9rem}
 }
+
+/* ===== Transição circular entre temas (View Transitions API) ===== */
+::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}
+::view-transition-old(root){z-index:1}
+::view-transition-new(root){z-index:2}
+@media (prefers-reduced-motion:reduce){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}}

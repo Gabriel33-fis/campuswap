@@ -15,6 +15,7 @@ def test_botao_de_tema_claro_escuro_presente(client):
     assert 'id="btn-tema-claro"' in html and 'id="btn-tema-escuro"' in html
     assert 'data-theme="light"' in client.get("/static/app.css").text
     assert "function aplicarTema" in client.get("/static/app.js").text
+    assert "startViewTransition" in client.get("/static/app.js").text  # transição circular entre temas
 
 
 def test_estaticos_declaram_utf8(client):

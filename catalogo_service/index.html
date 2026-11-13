@@ -28,8 +28,8 @@
       </div>
       <div class="acoes-topo flex items-center gap-3">
         <div class="tema-toggle" role="group" aria-label="Tema da página">
-          <button type="button" id="btn-tema-claro" onclick="aplicarTema('light')" aria-label="Tema claro" aria-pressed="false" title="Tema claro"><i class="ph ph-sun"></i></button>
-          <button type="button" id="btn-tema-escuro" onclick="aplicarTema('dark')" aria-label="Tema escuro" aria-pressed="true" title="Tema escuro"><i class="ph ph-moon"></i></button>
+          <button type="button" id="btn-tema-claro" onclick="aplicarTema('light', true, event)" aria-label="Tema claro" aria-pressed="false" title="Tema claro"><i class="ph ph-sun"></i></button>
+          <button type="button" id="btn-tema-escuro" onclick="aplicarTema('dark', true, event)" aria-label="Tema escuro" aria-pressed="true" title="Tema escuro"><i class="ph ph-moon"></i></button>
         </div>
         <nav id="nav-actions" class="flex items-center space-x-3">
           <button onclick="mostrarLogin()" class="text-white font-bold px-4 py-2 rounded-lg text-sm shadow transition" style="background:var(--violet)">Entrar</button>

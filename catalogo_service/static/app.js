@@ -7,14 +7,33 @@ const PALETAS = {
   light: { texto: '#6b6b6b', borda: '#e1e1de', barra1: '#161616', barra2: '#b5b5b0', donut: ['#161616', '#6b6b6b', '#a3a3a3', '#d4d4d0'], fundo: '#ffffff' }
 };
 function temaAtual() { return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'; }
-function aplicarTema(tema, salvar = true) {
-  document.documentElement.dataset.theme = tema;
-  if (salvar) { try { localStorage.setItem('tema', tema); } catch (e) { /* armazenamento bloqueado: vale só nesta visita */ } }
-  const claro = tema === 'light';
-  const bC = document.getElementById('btn-tema-claro'), bE = document.getElementById('btn-tema-escuro');
-  if (bC) bC.setAttribute('aria-pressed', String(claro));
-  if (bE) bE.setAttribute('aria-pressed', String(!claro));
-  if (salvar && typeof renderizarGraficos === 'function' && localStorage.getItem('token')) renderizarGraficos();  // gráficos usam as cores do tema
+function aplicarTema(tema, salvar = true, evento = null) {
+  const aplicar = () => {
+    document.documentElement.dataset.theme = tema;
+    if (salvar) { try { localStorage.setItem('tema', tema); } catch (e) { /* armazenamento bloqueado: vale só nesta visita */ } }
+    const claro = tema === 'light';
+    const bC = document.getElementById('btn-tema-claro'), bE = document.getElementById('btn-tema-escuro');
+    if (bC) bC.setAttribute('aria-pressed', String(claro));
+    if (bE) bE.setAttribute('aria-pressed', String(!claro));
+  };
+  const redesenhar = () => { if (salvar && typeof renderizarGraficos === 'function' && localStorage.getItem('token')) renderizarGraficos(); };  // gráficos usam as cores do tema
+
+  // Transição: o novo tema se expande em círculo a partir do botão clicado (View Transitions API + clip-path).
+  // Sem suporte, com "reduzir movimento" ativo ou sem clique (carga da página), a troca é instantânea.
+  const reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!evento || !document.startViewTransition || reduzir || tema === temaAtual()) { aplicar(); redesenhar(); return; }
+
+  const alvo = (evento.currentTarget || evento.target).getBoundingClientRect();
+  const x = alvo.left + alvo.width / 2, y = alvo.top + alvo.height / 2;
+  const raio = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+  const transicao = document.startViewTransition(aplicar);
+  transicao.ready.then(() => {
+    document.documentElement.animate(
+      { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${raio}px at ${x}px ${y}px)`] },
+      { duration: 650, easing: 'cubic-bezier(.4, 0, .2, 1)', pseudoElement: '::view-transition-new(root)' }
+    );
+  }).catch(() => {});
+  transicao.finished.finally(redesenhar);
 }
 aplicarTema(temaAtual(), false);   // sincroniza o botão com o tema que já foi aplicado no <head>
 const API_BASE = window.location.origin;
