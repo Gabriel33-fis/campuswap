@@ -161,6 +161,7 @@
           <span class="text-xs font-bold" style="color:var(--lime)">Plano atual</span>
           <h5 id="badge-plano" class="text-lg font-extrabold mt-1">Plano Free</h5>
           <p id="badge-plano-desc" class="text-xs text-indigo-200 mt-2 mb-4 leading-relaxed">Publique seus materiais e acerte entregas com colegas do campus.</p>
+          <ul id="plano-beneficios" class="text-xs space-y-1.5 mb-4"></ul>
           <button id="btn-upgrade-stripe" onclick="iniciarCheckoutStripe()" class="btn-main w-full text-xs !py-2.5 !shadow-none"><i class="ph ph-lightning mr-1"></i> Fazer upgrade para Premium</button>
           <button id="btn-portal-stripe" onclick="abrirPortalStripe()" class="hidden btn-main w-full text-xs !py-2.5 !shadow-none"><i class="ph ph-credit-card mr-1"></i> Gerenciar assinatura</button>
         </div>
@@ -178,14 +179,28 @@
             <div class="bg-white p-4 border border-gray-200 shadow-sm"><span class="text-xs text-gray-500 font-bold">Valor em circulação</span><p class="display text-3xl font-extrabold text-green-600 mt-1" id="kpi-economia">R$ 0,00</p><span class="text-xs text-green-700 font-bold">Economia circular</span></div>
             <div class="bg-white p-4 border border-gray-200 shadow-sm"><span class="text-xs text-gray-500 font-bold">Status da conta</span><p class="text-sm font-extrabold mt-3 truncate" id="kpi-status-conta">Estudante Free</p><span class="text-xs text-blue-600 font-bold"><i class="ph ph-check-circle"></i> Verificada</span></div>
           </div>
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div class="lg:col-span-2 bg-white p-5 border border-gray-200 shadow-sm">
-              <div class="flex justify-between items-center mb-4"><h3 class="font-bold text-sm">Atividade no campus</h3><span class="text-xs text-gray-400 font-bold">Últimos 7 dias</span></div>
-              <div style="height:220px"><canvas id="graficoAtividade"></canvas></div>
+          <!-- Métricas completas: exclusivas do plano Premium -->
+          <div id="metricas-bloqueadas" class="bg-white p-6 border border-gray-200 shadow-sm text-center">
+            <i class="ph ph-lock-simple text-3xl opacity-70"></i>
+            <h3 class="font-extrabold text-lg mt-2">Métricas completas são do plano Premium</h3>
+            <p class="text-sm text-gray-500 mt-1 max-w-md mx-auto">Veja quantos anúncios você publica por dia, quanto vale o seu catálogo e como o seu movimento se compara ao do campus.</p>
+            <button onclick="iniciarCheckoutStripe()" class="btn-main text-sm mt-4 !py-2.5 !px-5"><i class="ph ph-lightning mr-1"></i> Conhecer o Premium</button>
+          </div>
+          <div id="metricas-conteudo" class="hidden space-y-6">
+            <div class="grid grid-cols-3 gap-4">
+              <div class="bg-white p-4 border border-gray-200 shadow-sm"><span class="text-xs text-gray-500 font-bold">Anúncios publicados</span><p class="display text-xl sm:text-2xl font-extrabold mt-1" id="met-total">0</p></div>
+              <div class="bg-white p-4 border border-gray-200 shadow-sm"><span class="text-xs text-gray-500 font-bold">Valor do catálogo</span><p class="display text-xl sm:text-2xl font-extrabold mt-1" id="met-valor">R$ 0,00</p></div>
+              <div class="bg-white p-4 border border-gray-200 shadow-sm"><span class="text-xs text-gray-500 font-bold">Com foto</span><p class="display text-xl sm:text-2xl font-extrabold mt-1" id="met-foto">0%</p></div>
             </div>
-            <div class="bg-white p-5 border border-gray-200 shadow-sm">
-              <h3 class="font-bold text-sm mb-2">Tipos de anúncio</h3>
-              <div style="height:190px"><canvas id="graficoModalidades"></canvas></div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div class="lg:col-span-2 bg-white p-5 border border-gray-200 shadow-sm">
+                <div class="flex justify-between items-center mb-4"><h3 class="font-bold text-sm">Anúncios publicados por dia</h3><span class="text-xs text-gray-400 font-bold">Últimos 7 dias</span></div>
+                <div style="height:220px"><canvas id="graficoAtividade"></canvas></div>
+              </div>
+              <div class="bg-white p-5 border border-gray-200 shadow-sm">
+                <h3 class="font-bold text-sm mb-2">Meus anúncios por tipo</h3>
+                <div style="height:190px"><canvas id="graficoModalidades"></canvas></div>
+              </div>
             </div>
           </div>
         </div>
@@ -208,6 +223,7 @@
           <div id="grid-vitrine" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
             <p class="text-gray-400 text-center col-span-full py-12">Carregando anúncios...</p>
           </div>
+          <div id="paginacao-vitrine" class="pag-wrap"></div>
         </div>
 
         <div id="aba-meus-anuncios" class="hidden space-y-6">
@@ -216,6 +232,7 @@
             <button onclick="abrirModalNovoItem()" class="text-white px-4 py-2 rounded-xl text-xs font-bold" style="background:var(--violet)"><i class="ph ph-plus"></i> Novo anúncio</button>
           </div>
           <div id="grid-meus-itens" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6"></div>
+          <div id="paginacao-meus" class="pag-wrap"></div>
         </div>
 
         <div id="aba-mensagens" class="hidden">
