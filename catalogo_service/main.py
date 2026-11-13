@@ -81,6 +81,10 @@ class StaticComCache(StaticFiles):
     def file_response(self, *args, **kwargs):
         resposta = super().file_response(*args, **kwargs)
         resposta.headers["Cache-Control"] = "public, max-age=86400"
+        # JS e CSS são UTF-8; sem charset explícito, abrir o arquivo direto no navegador mostra os acentos quebrados
+        tipo = resposta.headers.get("content-type", "")
+        if tipo.split(";")[0] in ("application/javascript", "text/javascript", "text/css") and "charset" not in tipo:
+            resposta.headers["content-type"] = f"{tipo.split(';')[0]}; charset=utf-8"
         return resposta
 
 
