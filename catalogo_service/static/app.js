@@ -2,7 +2,10 @@
 
 /* ---- parte 1 ---- */
 const API_BASE = window.location.origin;
-let todosItens = [], chartAtividade = null, chartModalidades = null, filtroAtualVitrine = 'todos', arquivoFotoItem = null;
+let chartAtividade = null, chartModalidades = null, arquivoFotoItem = null;
+const POR_PAGINA = 9;
+// estado de cada lista paginada (a paginação, o filtro e a busca acontecem no servidor)
+const ESTADO = { vitrine: { pagina: 1, modalidade: 'todos', q: '' }, meus: { pagina: 1 } };
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ativo = "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-indigo-50 text-indigo-700 font-bold transition";
@@ -92,22 +95,28 @@ function obterUsuarioLogadoId() {
 }
 const ehMeu = item => { const id = obterUsuarioLogadoId(); return id != null && String(item.usuario_id) === String(id); };
 
-function renderizarMeusAnuncios() {
+async function renderizarMeusAnuncios() {
   const c = document.getElementById('grid-meus-itens');
-  const meus = todosItens.filter(ehMeu);
-  if (!meus.length) {
-    c.innerHTML = `<div class="col-span-full py-16 text-center bg-white rounded-2xl border border-dashed border-gray-300"><span class="text-4xl block mb-2">📦</span><p class="text-gray-700 font-bold text-sm">Você ainda não anunciou nenhum material.</p><button onclick="abrirModalNovoItem()" class="mt-3 font-bold text-sm underline" style="color:var(--violet)">Criar o primeiro anúncio</button></div>`;
-    return;
-  }
-  c.innerHTML = meus.map(cardItem).join('');
+  const meuId = obterUsuarioLogadoId();
+  if (meuId == null) { c.innerHTML = ''; return; }
+  await carregarLista({
+    estado: ESTADO.meus, grid: c, paginacao: 'paginacao-meus', lista: 'meus',
+    params: { usuario_id: meuId },
+    vazio: `<div class="col-span-full py-16 text-center bg-white rounded-2xl border border-dashed border-gray-300"><i class="ph ph-package text-4xl block mb-2 opacity-60"></i><p class="text-gray-700 font-bold text-sm">Você ainda não anunciou nenhum material.</p><button onclick="abrirModalNovoItem()" class="mt-3 font-bold text-sm underline" style="color:var(--violet)">Criar o primeiro anúncio</button></div>`
+  });
 }
 
 function mudarAba(aba) {
+  const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
+  const ehAdmin = usuario.papel === 'admin';
+  if (aba === 'admin' && !ehAdmin) aba = 'overview';   // o painel admin não abre para quem não é admin
   const mapa = { overview: 'aba-overview', vitrine: 'aba-vitrine', 'meus-anuncios': 'aba-meus-anuncios', mensagens: 'aba-mensagens', perfil: 'aba-perfil', admin: 'aba-admin' };
   Object.keys(mapa).forEach(k => {
     document.getElementById(mapa[k]).classList.toggle('hidden', k !== aba);
     document.getElementById('btn-menu-' + k).className = k === aba ? ativo : inativo;
   });
+  // o loop acima redefine o className e apagaria o "hidden": o item Painel admin só existe para admin
+  document.getElementById('btn-menu-admin').classList.toggle('hidden', !ehAdmin);
   // no celular o menu é uma faixa rolável: mantém a aba ativa visível
   const btnAtivo = document.getElementById('btn-menu-' + aba);
   if (btnAtivo && btnAtivo.scrollIntoView) btnAtivo.scrollIntoView({ block: 'nearest', inline: 'center' });
@@ -173,6 +182,7 @@ function atualizarEstadoVisual() {
 
     const badgePlano = document.getElementById('badge-plano');
     const badgePlanoDesc = document.getElementById('badge-plano-desc');
+    renderizarBeneficios(isPro);
     const btnUpgrade = document.getElementById('btn-upgrade-stripe');
 
     if (badgePlano) {
@@ -367,24 +377,67 @@ async function cadastrarItem(e) {
   }
 }
 
+// Atualiza os números do painel e as listas que estão abertas
 async function carregarItens() {
   try {
-    const res = await fetch(`${API_BASE}/api/itens`);
-    const itens = await res.json();
-    todosItens = Array.isArray(itens) ? itens : [];
-    document.getElementById('kpi-total-campus').textContent = todosItens.length;
-    const total = todosItens.reduce((a, c) => a + (parseFloat(c.preco) || 0), 0);
-    document.getElementById('kpi-economia').textContent = `R$ ${total.toFixed(2).replace('.', ',')}`;
-    document.getElementById('kpi-meus-itens').textContent = todosItens.filter(ehMeu).length;
-    renderizarVitrine();
-    if (localStorage.getItem('token')) renderizarGraficos();
+    const geral = await buscarItens({ pagina: 1, limite: 1 });
+    document.getElementById('kpi-total-campus').textContent = geral.total;
+    document.getElementById('kpi-economia').textContent = `R$ ${Number(geral.valor_total).toFixed(2).replace('.', ',')}`;
+    const meuId = obterUsuarioLogadoId();
+    if (meuId != null) {
+      const meus = await buscarItens({ pagina: 1, limite: 1, usuario_id: meuId });
+      document.getElementById('kpi-meus-itens').textContent = meus.total;
+    }
   } catch (err) {
     console.error('Erro ao buscar itens:', err);
   }
+  if (!document.getElementById('aba-vitrine').classList.contains('hidden')) renderizarVitrine();
+  if (!document.getElementById('aba-meus-anuncios').classList.contains('hidden')) renderizarMeusAnuncios();
+  if (localStorage.getItem('token')) renderizarGraficos();
+}
+
+async function buscarItens(params) {
+  const qs = new URLSearchParams({ limite: POR_PAGINA, ...params });
+  const res = await fetch(`${API_BASE}/api/itens?${qs}`);
+  if (!res.ok) throw new Error('Falha ao carregar os anúncios.');
+  return res.json();
+}
+
+// Carrega uma página de anúncios e desenha a grade e os botões de paginação
+async function carregarLista({ estado, grid, paginacao, lista, params, vazio }) {
+  grid.innerHTML = '<p class="text-gray-400 text-center col-span-full py-12">Carregando anúncios...</p>';
+  try {
+    const dados = await buscarItens({ ...params, pagina: estado.pagina });
+    if (estado.pagina > dados.paginas) { estado.pagina = dados.paginas; return carregarLista({ estado, grid, paginacao, lista, params, vazio }); }
+    grid.innerHTML = dados.itens.length ? dados.itens.map(cardItem).join('') : vazio;
+    renderizarPaginacao(paginacao, lista, dados);
+  } catch (err) {
+    grid.innerHTML = '<p class="text-gray-400 text-center col-span-full py-12">Não foi possível carregar os anúncios. Tente atualizar.</p>';
+    renderizarPaginacao(paginacao, lista, null);
+  }
+}
+
+function renderizarPaginacao(id, lista, dados) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (!dados || dados.paginas <= 1) { el.innerHTML = dados && dados.total ? `<span class="text-xs text-gray-500">${dados.total} anúncio${dados.total > 1 ? 's' : ''}</span>` : ''; return; }
+  const { pagina, paginas, total } = dados;
+  el.innerHTML = `
+    <button onclick="irParaPagina('${lista}', ${pagina - 1})" ${pagina <= 1 ? 'disabled' : ''} class="pag-btn" aria-label="Página anterior"><i class="ph ph-caret-left"></i> Anterior</button>
+    <span class="text-xs text-gray-500 font-bold">Página ${pagina} de ${paginas} · ${total} anúncios</span>
+    <button onclick="irParaPagina('${lista}', ${pagina + 1})" ${pagina >= paginas ? 'disabled' : ''} class="pag-btn" aria-label="Próxima página">Próxima <i class="ph ph-caret-right"></i></button>`;
+}
+
+function irParaPagina(lista, pagina) {
+  ESTADO[lista].pagina = Math.max(1, pagina);
+  if (lista === 'vitrine') renderizarVitrine(); else renderizarMeusAnuncios();
+  const topo = document.getElementById(lista === 'vitrine' ? 'aba-vitrine' : 'aba-meus-anuncios');
+  if (topo) topo.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function filtrarVitrine(tipo) {
-  filtroAtualVitrine = tipo;
+  ESTADO.vitrine.modalidade = tipo;
+  ESTADO.vitrine.pagina = 1;
   ['todos','venda','troca','doacao'].forEach(b => {
     document.getElementById(`btn-filtro-${b}`).className = "px-3 py-1.5 rounded-lg font-bold " + (b === tipo ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200");
   });
@@ -403,9 +456,7 @@ async function excluirItem(id) {
       throw new Error(erro.detail || "Falha ao excluir o anúncio.");
     }
     mostrarToast("Anúncio excluído com sucesso!", "sucesso");
-    if (typeof renderizarMeusAnuncios === 'function') renderizarMeusAnuncios();
-    if (typeof renderizarVitrine === 'function') renderizarVitrine();
-    if (typeof carregarProdutos === 'function') await carregarProdutos();
+    carregarItens();
   } catch (e) {
     mostrarToast(e.message, "aviso");
   }
@@ -430,10 +481,11 @@ function cardItem(item) {
     ? `<img src="${esc(item.imagem_url)}" alt="${esc(item.titulo)}" class="w-full h-full object-cover">`
     : `<i class="ph ph-image text-4xl opacity-50"></i>`;
   return `
-    <div class="card-item bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col justify-between">
+    <div class="card-item ${item.destaque ? 'card-destaque ' : ''}bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col justify-between">
       <div class="h-36 bg-gray-50 flex items-center justify-center relative border-b border-gray-100 overflow-hidden">
         ${capa}
         <span class="absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-xs font-bold ${cores[mod] || cores.venda}">${esc(mod)}</span>
+        ${item.destaque ? '<span class="selo-destaque absolute top-3 right-3 px-2 py-0.5 rounded-full text-xs font-bold flex items-center gap-1"><i class="ph ph-star"></i> Destaque</span>' : ''}
         <span class="absolute bottom-3 right-3 bg-white px-2 py-1 rounded-md text-xs font-black shadow">${preco}</span>
       </div>
       <div class="p-4 flex-1 flex flex-col justify-between">
@@ -443,46 +495,97 @@ function cardItem(item) {
     </div>`;
 }
 
-function renderizarVitrine(lista) {
-  const container = document.getElementById('grid-vitrine');
-  let itens = lista || todosItens.filter(i => filtroAtualVitrine === 'todos' || (i.modalidade || '').toLowerCase() === filtroAtualVitrine);
-  if (!itens.length) {
-    container.innerHTML = `<div class="col-span-full py-16 text-center bg-white rounded-2xl border border-gray-200"><span class="text-4xl block mb-2">🔍</span><p class="text-gray-600 font-bold text-sm">Nenhum anúncio por aqui ainda.</p><button onclick="abrirModalNovoItem()" class="mt-3 font-bold text-sm underline" style="color:var(--violet)">Publique o primeiro</button></div>`;
-    return;
-  }
-  container.innerHTML = itens.map(cardItem).join('');
+async function renderizarVitrine() {
+  const e = ESTADO.vitrine;
+  const params = {};
+  if (e.modalidade !== 'todos') params.modalidade = e.modalidade;
+  if (e.q) params.q = e.q;
+  await carregarLista({
+    estado: e, grid: document.getElementById('grid-vitrine'), paginacao: 'paginacao-vitrine', lista: 'vitrine', params,
+    vazio: `<div class="col-span-full py-16 text-center bg-white rounded-2xl border border-gray-200"><i class="ph ph-magnifying-glass text-4xl block mb-2 opacity-60"></i><p class="text-gray-600 font-bold text-sm">${e.q ? 'Nenhum anúncio encontrado para essa busca.' : 'Nenhum anúncio por aqui ainda.'}</p></div>`
+  });
 }
 
+let _timerBusca = null;
 function filtrarItensNavbar() {
-  const termo = document.getElementById('campo-busca-nav').value.toLowerCase();
   if (!localStorage.getItem('token')) return;
-  mudarAba('vitrine');
-  renderizarVitrine(todosItens.filter(i => (i.titulo || '').toLowerCase().includes(termo) || (i.descricao || '').toLowerCase().includes(termo)));
+  clearTimeout(_timerBusca);
+  _timerBusca = setTimeout(() => {   // espera o usuário parar de digitar
+    ESTADO.vitrine.q = document.getElementById('campo-busca-nav').value.trim();
+    ESTADO.vitrine.pagina = 1;
+    if (document.getElementById('aba-vitrine').classList.contains('hidden')) mudarAba('vitrine');  // já recarrega a lista
+    else renderizarVitrine();
+  }, 300);
 }
 
-function renderizarGraficos() {
-  const diaLabels = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }); });
+function formatarDia(iso) { const [, m, d] = iso.split('-'); return `${d}/${m}`; }
+
+function usuarioEhPro() {
+  const u = JSON.parse(localStorage.getItem('usuario') || '{}');
+  return !!(u.is_premium || u.plano === 'pro');
+}
+
+// Métricas completas: exclusivas do plano Premium (o servidor também confere e responde 403 no Free)
+async function renderizarGraficos() {
+  const bloqueio = document.getElementById('metricas-bloqueadas');
+  const conteudo = document.getElementById('metricas-conteudo');
+  if (!bloqueio || !conteudo) return;
+  const mostrarBloqueio = () => {
+    bloqueio.classList.remove('hidden'); conteudo.classList.add('hidden');
+    if (chartAtividade) { chartAtividade.destroy(); chartAtividade = null; }
+    if (chartModalidades) { chartModalidades.destroy(); chartModalidades = null; }
+  };
+  if (!localStorage.getItem('token') || !usuarioEhPro()) return mostrarBloqueio();
+
+  let d;
+  try {
+    const res = await fetch(`${API_BASE}/api/metricas/premium`, { headers: authH() });
+    if (res.status === 403) return mostrarBloqueio();
+    if (!res.ok) throw new Error();
+    d = await res.json();
+  } catch (e) { return mostrarBloqueio(); }
+
+  bloqueio.classList.add('hidden'); conteudo.classList.remove('hidden');
+  document.getElementById('met-total').textContent = d.total_anuncios;
+  document.getElementById('met-valor').textContent = `R$ ${Number(d.valor_total).toFixed(2).replace('.', ',')}`;
+  document.getElementById('met-foto').textContent = `${d.com_foto_pct}%`;
+
+  Chart.defaults.color = '#8c8c8c'; Chart.defaults.borderColor = '#2e2e2e';
   const a = document.getElementById('graficoAtividade');
-  if (a) {
-    if (chartAtividade) chartAtividade.destroy();
-    Chart.defaults.color = '#8c8c8c'; Chart.defaults.borderColor = '#2e2e2e';
-    chartAtividade = new Chart(a, {
-      type: 'bar',
-      data: { labels: diaLabels, datasets: [{ label: 'Interações', data: [12, 19, 8, 15, 22, 14, todosItens.length + 5], backgroundColor: '#ececec', borderRadius: 4 }] },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
-    });
-  }
+  if (chartAtividade) chartAtividade.destroy();
+  chartAtividade = new Chart(a, {
+    type: 'bar',
+    data: {
+      labels: d.meus_por_dia.map(x => formatarDia(x.data)),
+      datasets: [
+        { label: 'Meus anúncios', data: d.meus_por_dia.map(x => x.total), backgroundColor: '#ececec', borderRadius: 4 },
+        { label: 'Todo o campus', data: d.campus_por_dia.map(x => x.total), backgroundColor: '#4a4a4a', borderRadius: 4 }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+  });
+
   const m = document.getElementById('graficoModalidades');
-  if (m) {
-    if (chartModalidades) chartModalidades.destroy();
-    const c = { venda: 0, troca: 0, doacao: 0, emprestimo: 0 };
-    todosItens.forEach(it => { const k = (it.modalidade || 'venda').toLowerCase(); c[k] !== undefined ? c[k]++ : c.venda++; });
-    chartModalidades = new Chart(m, {
-      type: 'doughnut',
-      data: { labels: ['Venda', 'Troca', 'Doação', 'Empréstimo'], datasets: [{ data: [c.venda || 4, c.troca || 2, c.doacao || 3, c.emprestimo || 1], backgroundColor: ['#ececec', '#a3a3a3', '#6b6b6b', '#3d3d3d'], borderColor: '#1e1e1e', borderWidth: 0 }] },
-      options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }
-    });
-  }
+  if (chartModalidades) chartModalidades.destroy();
+  const c = d.por_modalidade;
+  chartModalidades = new Chart(m, {
+    type: 'doughnut',
+    data: { labels: ['Venda', 'Troca', 'Doação', 'Empréstimo'], datasets: [{ data: [c.venda, c.troca, c.doacao, c.emprestimo], backgroundColor: ['#ececec', '#a3a3a3', '#6b6b6b', '#3d3d3d'], borderColor: '#1e1e1e', borderWidth: 2 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }
+  });
+}
+
+// Lista de benefícios do cartão do plano: o que o Free tem e o que o Premium libera
+function renderizarBeneficios(isPro) {
+  const el = document.getElementById('plano-beneficios');
+  if (!el) return;
+  const itens = [
+    { txt: isPro ? 'Anúncios ilimitados' : 'Até 3 anúncios por mês', ok: true },
+    { txt: 'Vitrine, busca e mensagens', ok: true },
+    { txt: 'Selo de destaque e prioridade na vitrine', ok: isPro },
+    { txt: 'Métricas completas dos seus anúncios', ok: isPro }
+  ];
+  el.innerHTML = itens.map(i => `<li class="flex items-start gap-2 ${i.ok ? '' : 'opacity-50'}"><i class="ph ${i.ok ? 'ph-check-circle' : 'ph-lock-simple'} mt-0.5"></i><span>${i.txt}</span></li>`).join('');
 }
 
 function reduzirImagem(file, max = 1280) {
