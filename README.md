@@ -11,6 +11,12 @@ Documento integrante da **Atividade 8** da disciplina de Introdução à Computa
 > - as fotos dos anúncios ficaram persistentes: MinIO com `S3BACKEND=file` e volumes (PR #19); no relatório, o MinIO aparece em memória, como estava na entrega;
 > - novo visual escuro e minimalista, com ícones de contorno e novo logotipo (PR #20); os prints do relatório mostram o visual anterior;
 > - script `db/001_dominio.sql` com o esquema das tabelas (PR #14).
+> - layout adaptado para smartphone (PR #23) e busca do cabeçalho exibida só para quem está logado (PR #22);
+> - front separado em `catalogo_service/static/app.css` e `app.js`, com cache de 1 dia invalidado a cada deploy (PRs #24 e #27);
+> - **paginação** da vitrine e de "Meus anúncios" (9 por página, com filtro e busca no servidor), **selo de destaque** e prioridade para anúncios de assinantes, e **métricas completas exclusivas do plano Premium** com dados reais; o plano Free vê um bloqueio com convite ao upgrade (PRs #25 e #26);
+> - o item "Painel admin" deixou de aparecer para quem não é admin (PR #26; o backend já exigia o papel);
+> - `DELETE /api/itens/{id}` e o envio de foto passaram a exigir login e ser o dono do anúncio (ou admin/moderador) (PR #25);
+> - **21 testes automatizados** (pytest) no CI, rodando antes do build das imagens, e actions do `deploy.yml` atualizadas para versões com Node 24 (PR #25).
 
 ---
 
